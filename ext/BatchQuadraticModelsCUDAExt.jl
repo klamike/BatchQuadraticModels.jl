@@ -12,7 +12,7 @@ import BatchQuadraticModels:
   BatchSparseOp,
   BatchQuadraticModel
 
-const WARP_KERNEL_THRESHOLD = Int32(4)
+const WARP_KERNEL_THRESHOLD = Int32(4)  # TODO: make more sophisticated
 
 function _batch_spmv_impl!(
   out::AbstractMatrix{T}, op::BatchSparseOp{<:CuVector}, B::AbstractMatrix{T},
@@ -122,7 +122,6 @@ function Adapt.adapt_structure(::Type{<:CuArray}, op::BatchSparseOp)
     Adapt.adapt(CuArray, op.flat_nz),
     Adapt.adapt(CuArray, op.flat_val),
     Adapt.adapt(CuArray, op.flat_packed),
-    op.max_row_nnz,
     op.mean_row_nnz,
   )
 end
