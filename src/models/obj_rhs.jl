@@ -81,7 +81,7 @@ function Adapt.adapt_structure(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
   nvar = bnlp.meta.nvar
   ncon = bnlp.meta.ncon
 
-  adapted = _adapt_to_operator(to, bnlp)
+  adapted = _adapt_to_operator(to, bnlp)  # check if backend supports preprocessed operators
   if adapted === nothing
     c_adapted = Adapt.adapt(to, bnlp.data.c)
     v_adapted = Adapt.adapt(to, bnlp.data.v)
@@ -98,10 +98,8 @@ function Adapt.adapt_structure(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
       bnlp.data.σ,
     )
     c_batch_adapted = Adapt.adapt(to, bnlp.c_batch)
-    HX_adapted = similar(c_batch_adapted, T, nvar, nbatch)
-    AX_adapted = similar(c_batch_adapted, T, ncon, nbatch)
-    fill!(HX_adapted, zero(T))
-    fill!(AX_adapted, zero(T))
+    HX_adapted = Adapt.adapt(to, bqp._HX)
+    AX_adapted = Adapt.adapt(to, bqp._AX)
   else
     data_adapted, c_batch_adapted, HX_adapted, AX_adapted = adapted
   end

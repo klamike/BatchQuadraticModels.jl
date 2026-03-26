@@ -32,6 +32,17 @@ struct BatchSparseOp{VI, VI64, MT}
   mean_row_nnz::Float64
 end
 
+function Adapt.adapt_structure(to, op::BatchSparseOp)
+  return BatchSparseOp(
+    Adapt.adapt(to, op.nzVals),
+    Adapt.adapt(to, op.rowptr),
+    Adapt.adapt(to, op.flat_nz),
+    Adapt.adapt(to, op.flat_val),
+    Adapt.adapt(to, op.flat_packed),
+    op.mean_row_nnz,
+  )
+end
+
 @inline _pack_nz_val(nz::Int32, val::Int32) = (Int64(nz) << 32) | Int64(val)
 @inline _unpack_nz(packed::Int64) = Int32(packed >> 32)
 @inline _unpack_val(packed::Int64) = Int32(packed & 0xffffffff)

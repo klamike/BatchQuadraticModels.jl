@@ -133,6 +133,50 @@ function BatchQuadraticModel(
   )
 end
 
+function Adapt.adapt_structure(to, bqp::BatchQuadraticModel{T}) where {T}
+  c_batch_adapted = Adapt.adapt(to, bqp.c_batch)
+  c0_batch_adapted = Adapt.adapt(to, bqp.c0_batch)
+  H_nzvals_adapted = Adapt.adapt(to, bqp.H_nzvals)
+  A_nzvals_adapted = Adapt.adapt(to, bqp.A_nzvals)
+  jac_op_adapted = Adapt.adapt(to, bqp.jac_op)
+  jact_op_adapted = Adapt.adapt(to, bqp.jact_op)
+  hess_op_adapted = Adapt.adapt(to, bqp.hess_op)
+  HX_adapted = Adapt.adapt(to, bqp._HX)
+
+  MT = typeof(c_batch_adapted)
+  VT = typeof(c0_batch_adapted)
+  meta_adapted = NLPModels.BatchNLPModelMeta{T, MT}(
+    bqp.meta.nbatch,
+    bqp.meta.nvar;
+    x0 = Adapt.adapt(to, bqp.meta.x0),
+    lvar = Adapt.adapt(to, bqp.meta.lvar),
+    uvar = Adapt.adapt(to, bqp.meta.uvar),
+    ncon = bqp.meta.ncon,
+    lcon = Adapt.adapt(to, bqp.meta.lcon),
+    ucon = Adapt.adapt(to, bqp.meta.ucon),
+    nnzj = bqp.meta.nnzj,
+    nnzh = bqp.meta.nnzh,
+    islp = bqp.meta.islp,
+    name = bqp.meta.name,
+  )
+
+  return BatchQuadraticModel{T, MT, VT, typeof(bqp.hess_rows)}(
+    meta_adapted,
+    c_batch_adapted,
+    c0_batch_adapted,
+    H_nzvals_adapted,
+    A_nzvals_adapted,
+    bqp.hess_rows,
+    bqp.hess_cols,
+    bqp.A_rows,
+    bqp.A_cols,
+    jac_op_adapted,
+    jact_op_adapted,
+    hess_op_adapted,
+    HX_adapted,
+  )
+end
+
 function NLPModels.obj!(bqp::BatchQuadraticModel{T}, bx::AbstractMatrix, bf::AbstractVector) where {T}
   batch_spmv!(bqp._HX, bqp.hess_op, bx)
   bf_mat = reshape(bf, 1, length(bf))
