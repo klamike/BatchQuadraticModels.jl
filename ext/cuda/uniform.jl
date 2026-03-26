@@ -1,4 +1,4 @@
-function Adapt.adapt_structure(::Type{<:CuArray}, bnlp::BatchQuadraticModel{T}) where {T}
+function Base.convert(::Type{BatchQuadraticModel{T, MT}}, bnlp::BatchQuadraticModel{T}) where {T, MT<:CuMatrix}
   nbatch = bnlp.meta.nbatch
   nvar = bnlp.meta.nvar
   ncon = bnlp.meta.ncon

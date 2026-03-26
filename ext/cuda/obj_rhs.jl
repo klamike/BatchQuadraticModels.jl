@@ -118,6 +118,35 @@ function _expand_symmetric_coo(H::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
   return SparseMatrixCOO(m, n, new_rows, new_cols, new_vals)
 end
 
+function Base.convert(::Type{ObjRHSBatchQuadraticModel{T, S}}, bnlp::ObjRHSBatchQuadraticModel{T}) where {T, S<:CuArray}
+  nbatch = bnlp.meta.nbatch
+  nvar = bnlp.meta.nvar
+  ncon = bnlp.meta.ncon
+
+  adapted = BatchQuadraticModels._adapt_to_operator(CuArray, bnlp)
+  @assert adapted !== nothing
+  data_gpu, c_batch_gpu, HX_gpu, AX_gpu = adapted
+
+  MT = typeof(c_batch_gpu)
+  meta_gpu = NLPModels.BatchNLPModelMeta{T, MT}(
+    nbatch, nvar;
+    x0 = CuMatrix{T}(bnlp.meta.x0),
+    lvar = CuMatrix{T}(bnlp.meta.lvar),
+    uvar = CuMatrix{T}(bnlp.meta.uvar),
+    ncon = ncon,
+    lcon = CuMatrix{T}(bnlp.meta.lcon),
+    ucon = CuMatrix{T}(bnlp.meta.ucon),
+    nnzj = bnlp.meta.nnzj,
+    nnzh = bnlp.meta.nnzh,
+    islp = bnlp.meta.islp,
+    name = bnlp.meta.name,
+  )
+
+  return ObjRHSBatchQuadraticModel{T, typeof(data_gpu.c), typeof(data_gpu.H), typeof(data_gpu.A), MT}(
+    meta_gpu, data_gpu, c_batch_gpu, HX_gpu, AX_gpu,
+  )
+end
+
 function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
   if !(to isa Type{<:CuArray} || to isa CUDABackend)
     return nothing

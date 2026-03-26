@@ -7,7 +7,7 @@ if CUDA.functional()
   @testset "ObjRHSBatchQuadraticModel sparse adaptation" begin
     qps = [ineqconqp_QP() for _ in 1:3]
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
-    gpu_bqp = adapt(CuArray, cpu_bqp)
+    gpu_bqp = convert(BatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
 
     @test !(gpu_bqp.data.H isa CuMatrix)
     @test !(gpu_bqp.data.A isa CuMatrix)
@@ -59,7 +59,7 @@ if CUDA.functional()
     ]
 
     cpu_bqp = BatchQuadraticModel(models)
-    gpu_bqp = adapt(CuArray, cpu_bqp)
+    gpu_bqp = convert(BatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
     ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]
