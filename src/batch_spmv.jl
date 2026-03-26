@@ -33,6 +33,18 @@ struct BatchSparseOp{VI, VI64, MT}
   mean_row_nnz::Float64
 end
 
+function Adapt.adapt_structure(to, op::BatchSparseOp)
+  BatchSparseOp(
+    Adapt.adapt(to, op.nzVals),
+    Adapt.adapt(to, op.rowptr),
+    Adapt.adapt(to, op.flat_nz),
+    Adapt.adapt(to, op.flat_val),
+    Adapt.adapt(to, op.flat_packed),
+    op.max_row_nnz,
+    op.mean_row_nnz,
+  )
+end
+
 @inline _pack_nz_val(nz::Int32, val::Int32) = (Int64(nz) << 32) | Int64(val)
 @inline _unpack_nz(packed::Int64) = Int32(packed >> 32)
 @inline _unpack_val(packed::Int64) = Int32(packed & 0xffffffff)
@@ -77,6 +89,10 @@ function _batch_spmv_impl!(
   out::AbstractMatrix{T}, op::BatchSparseOp, B::AbstractMatrix,
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
 ) where {T}
+  if (ext = Base.get_extension(BatchQuadraticModels, :BatchQuadraticModelsKernelIntrinsicsExt)) !== nothing
+    maybe_out = ext._batch_spmv_ki_impl!(out, op, B, alpha, beta, val_offset)
+    maybe_out === nothing || return maybe_out
+  end
   nout = length(op.rowptr) - 1
   bs = size(out, 2)
   beta_is_zero = iszero(beta)

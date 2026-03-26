@@ -1,5 +1,6 @@
 module BatchQuadraticModels
 
+using Adapt
 using LinearAlgebra, SparseArrays
 using NLPModels
 using QuadraticModels

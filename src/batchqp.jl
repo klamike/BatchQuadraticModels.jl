@@ -31,6 +31,61 @@ struct BatchQuadraticModel{T, MT, VT <: AbstractVector{T}, VI <: AbstractVector{
   _HX::MT
 end
 
+function Adapt.adapt_structure(to, bnlp::BatchQuadraticModel{T}) where {T}
+  nbatch = bnlp.meta.nbatch
+  nvar = bnlp.meta.nvar
+  ncon = bnlp.meta.ncon
+
+  c_batch_adapted = Adapt.adapt(to, bnlp.c_batch)
+  c0_batch_adapted = Adapt.adapt(to, bnlp.c0_batch)
+  jac_op_adapted = Adapt.adapt(to, bnlp.jac_op)
+  jact_op_adapted = Adapt.adapt(to, bnlp.jact_op)
+  hess_op_adapted = Adapt.adapt(to, bnlp.hess_op)
+  H_nzvals_adapted = hess_op_adapted.nzVals
+  A_nzvals_adapted = jac_op_adapted.nzVals
+  hess_rows_adapted = Adapt.adapt(to, bnlp.hess_rows)
+  hess_cols_adapted = Adapt.adapt(to, bnlp.hess_cols)
+  A_rows_adapted = Adapt.adapt(to, bnlp.A_rows)
+  A_cols_adapted = Adapt.adapt(to, bnlp.A_cols)
+  HX_adapted = similar(c_batch_adapted, T, nvar, nbatch)
+  fill!(HX_adapted, zero(T))
+
+  MT = typeof(c_batch_adapted)
+  VT = typeof(c0_batch_adapted)
+  VI = typeof(hess_rows_adapted)
+
+  meta_adapted = NLPModels.BatchNLPModelMeta{T, MT}(
+    nbatch,
+    nvar;
+    x0 = Adapt.adapt(to, bnlp.meta.x0),
+    lvar = Adapt.adapt(to, bnlp.meta.lvar),
+    uvar = Adapt.adapt(to, bnlp.meta.uvar),
+    ncon = ncon,
+    lcon = Adapt.adapt(to, bnlp.meta.lcon),
+    ucon = Adapt.adapt(to, bnlp.meta.ucon),
+    nnzj = bnlp.meta.nnzj,
+    nnzh = bnlp.meta.nnzh,
+    islp = bnlp.meta.islp,
+    name = bnlp.meta.name,
+  )
+
+  return BatchQuadraticModel{T, MT, VT, VI}(
+    meta_adapted,
+    c_batch_adapted,
+    c0_batch_adapted,
+    H_nzvals_adapted,
+    A_nzvals_adapted,
+    hess_rows_adapted,
+    hess_cols_adapted,
+    A_rows_adapted,
+    A_cols_adapted,
+    jac_op_adapted,
+    jact_op_adapted,
+    hess_op_adapted,
+    HX_adapted,
+  )
+end
+
 function BatchQuadraticModel(
   qps::Vector{QP};
   name::String = "SameStructBatchQP",
