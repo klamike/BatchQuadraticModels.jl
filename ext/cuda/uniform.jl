@@ -10,7 +10,6 @@ function Base.convert(::Type{BatchQuadraticModel{T, MT}}, bnlp::BatchQuadraticMo
   A_rows_gpu = CuVector{Int}(bnlp.A_rows)
   A_cols_gpu = CuVector{Int}(bnlp.A_cols)
   HX_gpu = CUDA.zeros(T, nvar, nbatch)
-  MT = typeof(c_batch_gpu)
   jac_op_gpu = Adapt.adapt(CuArray, bnlp.jac_op)
   jact_op_gpu = Adapt.adapt(CuArray, bnlp.jact_op)
   hess_op_gpu = Adapt.adapt(CuArray, bnlp.hess_op)
