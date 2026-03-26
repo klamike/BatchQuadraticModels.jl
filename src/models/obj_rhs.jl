@@ -98,8 +98,8 @@ function Adapt.adapt_structure(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
       bnlp.data.σ,
     )
     c_batch_adapted = Adapt.adapt(to, bnlp.c_batch)
-    HX_adapted = Adapt.adapt(to, bqp._HX)
-    AX_adapted = Adapt.adapt(to, bqp._AX)
+    HX_adapted = Adapt.adapt(to, bnlp._HX)
+    AX_adapted = Adapt.adapt(to, bnlp._AX)
   else
     data_adapted, c_batch_adapted, HX_adapted, AX_adapted = adapted
   end
