@@ -17,7 +17,7 @@ Base.size(A::CuSparseOperator) = (A.m, A.n)
 SparseArrays.nnz(A::CuSparseOperator) = nnz(A.A)
 operator_sparse_matrix(A::CuSparseOperator) = A.A
 
-function CUSPARSE.CuSparseMatrixCSR(A::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
+function _coo_to_cu_csr(A::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
   return CUSPARSE.CuSparseMatrixCSR(sparse(A.rows, A.cols, A.vals, size(A)...))
 end
 

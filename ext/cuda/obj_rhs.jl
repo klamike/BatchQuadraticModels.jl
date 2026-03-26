@@ -156,9 +156,9 @@ function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchQuadraticM
   nvar = bnlp.meta.nvar
   ncon = bnlp.meta.ncon
 
-  H_orig_csr = CUSPARSE.CuSparseMatrixCSR(bnlp.data.H)
-  H_full_csr = CUSPARSE.CuSparseMatrixCSR(_expand_symmetric_coo(bnlp.data.H))
-  A_csr = CUSPARSE.CuSparseMatrixCSR(bnlp.data.A)
+  H_orig_csr = _coo_to_cu_csr(bnlp.data.H)
+  H_full_csr = _coo_to_cu_csr(_expand_symmetric_coo(bnlp.data.H))
+  A_csr = _coo_to_cu_csr(bnlp.data.A)
 
   H_op = gpu_operator(H_full_csr; symmetric = false, spmm_ncols = nbatch)
   H_op.A = H_orig_csr
