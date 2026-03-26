@@ -2,12 +2,8 @@ using Adapt
 using CUDA
 using KernelAbstractions
 
+if CUDA.functional()
 @testset "CUDA" begin
-  if !CUDA.functional()
-    @info "Skipping CUDA tests because CUDA.functional() is false"
-    return
-  end
-
   @testset "ObjRHSBatchQuadraticModel sparse adaptation" begin
     qps = [ineqconqp_QP() for _ in 1:3]
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
@@ -85,4 +81,5 @@ using KernelAbstractions
       @test bh[:, i] ≈ hess_coord(models[i], xs[i], ys[i]; obj_weight = Array(w)[i])
     end
   end
+end
 end

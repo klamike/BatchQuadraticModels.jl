@@ -5,7 +5,7 @@ using CUDA
 using CUDA.CUSPARSE
 using KernelAbstractions
 import LinearAlgebra
-import LinearAlgebra: BlasFloat, Symmetric
+import LinearAlgebra: BlasFloat, Symmetric, mul!
 using NLPModels
 using SparseArrays
 import BatchQuadraticModels
