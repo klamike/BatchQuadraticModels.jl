@@ -39,3 +39,4 @@ end
 
 include("objrhsbatchqp.jl")
 include("batchqp.jl")
+include("cuda.jl")

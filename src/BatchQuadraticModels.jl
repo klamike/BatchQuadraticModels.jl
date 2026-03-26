@@ -1,5 +1,6 @@
 module BatchQuadraticModels
 
+using Adapt
 using LinearAlgebra, SparseArrays
 using NLPModels
 using QuadraticModels
@@ -10,11 +11,19 @@ import QuadraticModels:
   QuadraticModel,
   fill_structure!
 
+abstract type AbstractSparseOperator{T} <: AbstractMatrix{T} end
+
+function gpu_operator end
+function operator_sparse_matrix end
+function batch_mapreduce! end
+
 export ObjRHSBatchQuadraticModel, BatchQuadraticModel
 export BatchSparseOp, batch_spmv!, _batch_spmv_impl!, _build_op
+export batch_mapreduce!
 
+include("batch_mapreduce.jl")
 include("batch_spmv.jl")
-include("models/uniform_batch.jl")
+include("models/uniform.jl")
 include("models/obj_rhs.jl")
 
 end # module BatchQuadraticModels

@@ -135,7 +135,11 @@ end
 
 function NLPModels.obj!(bqp::BatchQuadraticModel{T}, bx::AbstractMatrix, bf::AbstractVector) where {T}
   batch_spmv!(bqp._HX, bqp.hess_op, bx)
-  bf .= bqp.c0_batch .+ vec(sum(bqp.c_batch .* bx, dims = 1)) .+ T(0.5) .* vec(sum(bx .* bqp._HX, dims = 1))
+  bf_mat = reshape(bf, 1, length(bf))
+  bqp._HX .*= T(0.5)
+  bqp._HX .+= bqp.c_batch
+  batch_mapreduce!(*, +, zero(T), bf_mat, bqp._HX, bx)
+  bf .+= bqp.c0_batch
   return bf
 end
 
