@@ -3,6 +3,8 @@ Base.@propagate_inbounds _src_getindex(srcs::Tuple, i, j) =
 Base.@propagate_inbounds _src_getindex(srcs::Tuple{Any}, i, j) = (srcs[1][i, j],)
 Base.@propagate_inbounds _src_getindex(srcs::Tuple{}, i, j) = ()
 
+const _AnyCuMat{T} = Union{CuMatrix{T}, SubArray{T, 2, <:CuArray{T, 2}, <:Tuple, false}}
+
 _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N}}) where {F, OP, T, N} = begin
   j = blockIdx().x
   bs = size(out, 2)
@@ -25,7 +27,7 @@ _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N
   return nothing
 end
 
-function BatchQuadraticModels.batch_mapreduce!(f, op, neutral::T, out::CuMatrix{T}, srcs::CuMatrix{T}...) where {T}
+function BatchQuadraticModels.batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
   nrows = size(first(srcs), 1)
   nrows == 0 && return out
   fill!(out, neutral)
