@@ -75,6 +75,11 @@ function _build_op(nzVals, rowptr, nz_map, val_map, colidx)
   return BatchSparseOp(nzVals, rowptr32, flat_nz, flat_val, flat_packed, mean_nnz)
 end
 
+function _build_storage_op(nzVals, rowptr, nz_map, val_map, colidx)
+  cpu_op = _build_op(nzVals, rowptr, nz_map, val_map, colidx)
+  return nzVals isa Matrix ? cpu_op : Adapt.adapt(typeof(nzVals), cpu_op)
+end
+
 function batch_spmv!(
   out::AbstractMatrix{T}, op::BatchSparseOp, B::AbstractMatrix,
   alpha::T = one(T), beta::T = zero(T); val_offset::Int = 0,
