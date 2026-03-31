@@ -68,6 +68,7 @@ function BatchQuadraticModel(
     ucon = ucon,
     nnzj = nnzj,
     nnzh = nnzh,
+    minimize = qp1.meta.minimize,
     islp = qp1.meta.islp,
     name = name,
   )

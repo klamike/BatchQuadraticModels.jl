@@ -37,6 +37,7 @@ function ObjRHSBatchQuadraticModel(
     ucon = ucon,
     nnzj = nnzj,
     nnzh = nnzh,
+    minimize = qp.meta.minimize,
     islp = (nnzh == 0),
     name = name,
   )
