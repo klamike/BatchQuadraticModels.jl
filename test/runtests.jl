@@ -1,4 +1,5 @@
 using Test
+using Adapt
 using LinearAlgebra
 using SparseArrays
 

@@ -233,3 +233,97 @@ end
     @test bc[:, i] ≈ cons(models[i], xs[i])
   end
 end
+
+@testset "batch constructor validation" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+
+  lp1 = QuadraticModel(
+    [1.0, 2.0],
+    spzeros(2, 2);
+    A = sparse([1, 2], [1, 2], [1.0, 1.0], 2, 2),
+    c0 = 0.0,
+    bounds...,
+  )
+  lp2 = QuadraticModel(
+    [1.0, 2.0],
+    spzeros(2, 2);
+    A = sparse([1, 1], [1, 2], [3.0, 4.0], 2, 2),
+    c0 = 0.0,
+    bounds...,
+  )
+
+  @test_throws AssertionError BatchLinearModel([lp1, lp2])
+  @test BatchLinearModel([lp1, lp2]; validate = false) isa BatchLinearModel
+
+  qp1 = ineqconqp_QP()
+  qp2 = QuadraticModel(
+    qp1.data.c,
+    qp1.data.H.rows,
+    qp1.data.H.cols,
+    qp1.data.H.vals;
+    Arows = [1, 2, 2, 3, 3, 1],
+    Acols = [1, 1, 2, 1, 2, 2],
+    Avals = qp1.data.A.vals,
+    lcon = qp1.meta.lcon,
+    ucon = qp1.meta.ucon,
+    lvar = qp1.meta.lvar,
+    uvar = qp1.meta.uvar,
+    c0 = qp1.data.c0,
+  )
+
+  @test_throws AssertionError BatchQuadraticModel([qp1, qp2])
+  @test BatchQuadraticModel([qp1, qp2]; validate = false) isa BatchQuadraticModel
+end
+
+@testset "adapt preserves objective sense" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  lp_models = [
+    QuadraticModel(
+      [1.0, 2.0],
+      spzeros(2, 2);
+      A = sparse([1, 2], [1, 2], [1.0 + i, 2.0 + i], 2, 2),
+      c0 = 0.0,
+      minimize = false,
+      bounds...,
+    ) for i in 0:1
+  ]
+  blinear = BatchLinearModel(lp_models)
+  @test !blinear.meta.minimize
+  @test !Adapt.adapt(Array, blinear).meta.minimize
+
+  qp = ineqconqp_QP()
+  qp_models = [
+    QuadraticModel(
+      qp.data.c,
+      qp.data.H.rows,
+      qp.data.H.cols,
+      qp.data.H.vals .* scale;
+      Arows = qp.data.A.rows,
+      Acols = qp.data.A.cols,
+      Avals = qp.data.A.vals .+ shift,
+      lcon = qp.meta.lcon,
+      ucon = qp.meta.ucon,
+      lvar = qp.meta.lvar,
+      uvar = qp.meta.uvar,
+      c0 = qp.data.c0,
+      minimize = false,
+    ) for (scale, shift) in ((1.0, 0.0), (2.0, 0.5))
+  ]
+  bquad = BatchQuadraticModel(qp_models)
+  @test !bquad.meta.minimize
+  @test !Adapt.adapt(Array, bquad).meta.minimize
+end
+
+@testset "empty batch validation" begin
+  qp = ineqconqp_QP()
+  lp = QuadraticModel(
+    [1.0, 2.0],
+    spzeros(2, 2);
+    A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2),
+    lcon = [-Inf, -Inf],
+    ucon = [Inf, Inf],
+  )
+
+  @test_throws AssertionError BatchQuadraticModel(typeof(qp)[])
+  @test_throws AssertionError BatchLinearModel(typeof(lp)[])
+end

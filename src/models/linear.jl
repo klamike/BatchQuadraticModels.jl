@@ -12,11 +12,14 @@ end
 function BatchLinearModel(
   qps::Vector{QP};
   name::String = "SameStructBatchLP",
-  MT = typeof(similar(first(qps).data.c, T, 0, 0)),
+  validate::Bool = true,
+  MT = nothing,
 ) where {QP <: QuadraticModel{T}} where {T}
   nbatch = length(qps)
   @assert nbatch > 0 "Need at least one model"
+  validate && _validate_uniform_batch(qps, "BatchLinearModel")
   qp1 = first(qps)
+  MT = _resolve_batch_matrix_type(qp1, T, MT)
   nvar = qp1.meta.nvar
   ncon = qp1.meta.ncon
   nnzj = qp1.meta.nnzj
@@ -105,6 +108,7 @@ function Adapt.adapt_structure(to, bqp::BatchLinearModel{T}) where {T}
     ucon = Adapt.adapt(to, bqp.meta.ucon),
     nnzj = bqp.meta.nnzj,
     nnzh = 0,
+    minimize = bqp.meta.minimize,
     islp = true,
     name = bqp.meta.name,
   )
@@ -230,13 +234,13 @@ function hess_coord_subset!(
   return bhvals
 end
 
-struct ObjRHSLinearModel{T, S, M1, M2, MT} <: AbstractObjRHSBatchQuadraticModel{T, MT}
+struct ObjRHSBatchLinearModel{T, S, M1, M2, MT} <: AbstractObjRHSBatchQuadraticModel{T, MT}
   meta::NLPModels.BatchNLPModelMeta{T, MT}
   data::QPData{T, S, M1, M2}
   c_batch::MT
 end
 
-function ObjRHSLinearModel(
+function ObjRHSBatchLinearModel(
   qp::QuadraticModel{T, S, M1, M2},
   nbatch::Int;
   MT = typeof(similar(qp.data.c, T, 0, 0)),
@@ -248,7 +252,7 @@ function ObjRHSLinearModel(
   c = copyto!(MT(undef, qp.meta.nvar, nbatch), repeat(qp.data.c, 1, nbatch)),
   name::String = "ObjRHSBatchLP",
 ) where {T, S, M1, M2}
-  @assert qp.meta.nnzh == 0 "ObjRHSLinearModel requires linear models"
+  @assert qp.meta.nnzh == 0 "ObjRHSBatchLinearModel requires linear models"
   @assert _supports_objrhs_batch_matrix(qp.data.A) "Dense batch Jacobians are not supported"
   nvar = qp.meta.nvar
   ncon = qp.meta.ncon
@@ -279,25 +283,28 @@ function ObjRHSLinearModel(
     qp.data.selected,
     qp.data.σ,
   )
-  return ObjRHSLinearModel{T, typeof(data.c), typeof(data.H), typeof(data.A), MT}(meta, data, c)
+  return ObjRHSBatchLinearModel{T, typeof(data.c), typeof(data.H), typeof(data.A), MT}(meta, data, c)
 end
 
-function ObjRHSLinearModel(
+function ObjRHSBatchLinearModel(
   qps::Vector{QP};
   name::String = "ObjRHSBatchLP",
-  MT = typeof(similar(first(qps).data.c, T, 0, 0)),
+  validate::Bool = true,
+  MT = nothing,
 ) where {QP <: QuadraticModel{T, S, M1, M2}} where {T, S, M1, M2}
+  validate && _validate_objrhs_batch(qps, "ObjRHSBatchLinearModel")
   nbatch = length(qps)
   @assert nbatch > 0 "Need at least one model"
   qp1 = first(qps)
-  @assert qp1.meta.nnzh == 0 "ObjRHSLinearModel requires linear models"
+  MT = _resolve_batch_matrix_type(qp1, T, MT)
+  @assert qp1.meta.nnzh == 0 "ObjRHSBatchLinearModel requires linear models"
   x0 = reduce(hcat, [qp.meta.x0 for qp in qps])
   lvar = reduce(hcat, [qp.meta.lvar for qp in qps])
   uvar = reduce(hcat, [qp.meta.uvar for qp in qps])
   lcon = reduce(hcat, [qp.meta.lcon for qp in qps])
   ucon = reduce(hcat, [qp.meta.ucon for qp in qps])
   c = reduce(hcat, [qp.data.c for qp in qps])
-  return ObjRHSLinearModel(
+  return ObjRHSBatchLinearModel(
     qp1,
     nbatch;
     x0 = x0,
@@ -311,7 +318,7 @@ function ObjRHSLinearModel(
   )
 end
 
-function Adapt.adapt_structure(to, bnlp::ObjRHSLinearModel{T}) where {T}
+function Adapt.adapt_structure(to, bnlp::ObjRHSBatchLinearModel{T}) where {T}
   adapted = _adapt_to_operator(to, bnlp)
   if adapted === nothing
     c_adapted = Adapt.adapt(to, bnlp.data.c)
@@ -345,16 +352,17 @@ function Adapt.adapt_structure(to, bnlp::ObjRHSLinearModel{T}) where {T}
     ucon = Adapt.adapt(to, bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = 0,
+    minimize = bnlp.meta.minimize,
     islp = true,
     name = bnlp.meta.name,
   )
 
-  return ObjRHSLinearModel{T, typeof(data_adapted.c), typeof(data_adapted.H), typeof(data_adapted.A), MT}(
+  return ObjRHSBatchLinearModel{T, typeof(data_adapted.c), typeof(data_adapted.H), typeof(data_adapted.A), MT}(
     meta_adapted, data_adapted, c_batch_adapted,
   )
 end
 
-function NLPModels.obj!(bqp::ObjRHSLinearModel{T}, bx::AbstractMatrix, bf::AbstractVector) where {T}
+function NLPModels.obj!(bqp::ObjRHSBatchLinearModel{T}, bx::AbstractMatrix, bf::AbstractVector) where {T}
   bf_mat = reshape(bf, 1, length(bf))
   batch_mapreduce!(*, +, zero(T), bf_mat, bqp.c_batch, bx)
   bf .+= bqp.data.c0
@@ -362,7 +370,7 @@ function NLPModels.obj!(bqp::ObjRHSLinearModel{T}, bx::AbstractMatrix, bf::Abstr
 end
 
 function obj_subset!(
-  bqp::ObjRHSLinearModel{T},
+  bqp::ObjRHSBatchLinearModel{T},
   bx::AbstractMatrix,
   bf::AbstractVector,
   roots::AbstractVector{<:Integer},
@@ -375,10 +383,10 @@ function obj_subset!(
   return bf
 end
 
-NLPModels.grad!(bqp::ObjRHSLinearModel, bx::AbstractMatrix, bg::AbstractMatrix) = copyto!(bg, bqp.c_batch)
+NLPModels.grad!(bqp::ObjRHSBatchLinearModel, bx::AbstractMatrix, bg::AbstractMatrix) = copyto!(bg, bqp.c_batch)
 
 function grad_subset!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   bx::AbstractMatrix,
   bg::AbstractMatrix,
   roots::AbstractVector{<:Integer},
@@ -387,13 +395,13 @@ function grad_subset!(
   return bg
 end
 
-function NLPModels.cons!(bqp::ObjRHSLinearModel{T}, bx::AbstractMatrix, bc::AbstractMatrix) where {T}
+function NLPModels.cons!(bqp::ObjRHSBatchLinearModel{T}, bx::AbstractMatrix, bc::AbstractMatrix) where {T}
   mul!(bc, bqp.data.A, bx)
   return bc
 end
 
 function cons_subset!(
-  bqp::ObjRHSLinearModel{T},
+  bqp::ObjRHSBatchLinearModel{T},
   bx::AbstractMatrix,
   bc::AbstractMatrix,
   roots::AbstractVector{<:Integer},
@@ -403,7 +411,7 @@ function cons_subset!(
 end
 
 function NLPModels.jac_structure!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   jrows::AbstractVector{<:Integer},
   jcols::AbstractVector{<:Integer},
 )
@@ -412,7 +420,7 @@ function NLPModels.jac_structure!(
 end
 
 function NLPModels.jac_coord!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   bx::AbstractMatrix,
   bjvals::AbstractMatrix,
 ) 
@@ -420,7 +428,7 @@ function NLPModels.jac_coord!(
 end
 
 function jac_coord_subset!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   bx::AbstractMatrix,
   bjvals::AbstractMatrix,
   roots::AbstractVector{<:Integer},
@@ -429,7 +437,7 @@ function jac_coord_subset!(
 end
 
 function NLPModels.hess_structure!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   hrows::AbstractVector{<:Integer},
   hcols::AbstractVector{<:Integer},
 )
@@ -437,7 +445,7 @@ function NLPModels.hess_structure!(
 end
 
 function NLPModels.hess_coord!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   bx::AbstractMatrix,
   by::AbstractMatrix,
   bobj_weight::AbstractVector,
@@ -447,7 +455,7 @@ function NLPModels.hess_coord!(
 end
 
 function hess_coord_subset!(
-  bqp::ObjRHSLinearModel,
+  bqp::ObjRHSBatchLinearModel,
   bx::AbstractMatrix,
   by::AbstractMatrix,
   bobj_weight::AbstractVector,
@@ -490,6 +498,18 @@ function _check_batch_compatibility(qps::Vector{QP}) where {QP <: QuadraticModel
   return qp1
 end
 
+function _validate_uniform_batch(qps::Vector{QP}, model_name::AbstractString) where {QP <: QuadraticModel}
+  _check_batch_compatibility(qps)
+  @assert _shares_uniform_structure(qps) "$model_name requires identical sparse structure across the batch; pass validate=false to skip this check"
+  return qps
+end
+
+function _validate_objrhs_batch(qps::Vector{QP}, model_name::AbstractString) where {QP <: QuadraticModel}
+  _check_batch_compatibility(qps)
+  @assert _shares_objrhs_data(qps) "$model_name requires shared static data across the batch; pass validate=false to skip this check"
+  return qps
+end
+
 _all_linear(qps::Vector{QP}) where {QP <: QuadraticModel} = all(qp -> qp.meta.nnzh == 0, qps)
 
 function _shares_objrhs_data(qps::Vector{QP}) where {QP <: QuadraticModel}
@@ -521,15 +541,14 @@ function _shares_uniform_structure(qps::Vector{QP}) where {QP <: QuadraticModel}
   )
 end
 
-function batch_model(qps::Vector{QP}; kwargs...) where {QP <: QuadraticModel}
+function batch_model(qps::Vector{QP}; validate::Bool = true, kwargs...) where {QP <: QuadraticModel}
   if _shares_objrhs_data(qps)
-    return _all_linear(qps) ? ObjRHSLinearModel(qps; kwargs...) : ObjRHSBatchQuadraticModel(qps; kwargs...)
+    return _all_linear(qps) ? ObjRHSBatchLinearModel(qps; validate = validate, kwargs...) : ObjRHSBatchQuadraticModel(qps; validate = validate, kwargs...)
   end
   if _shares_uniform_structure(qps)
-    return _all_linear(qps) ? BatchLinearModel(qps; kwargs...) : BatchQuadraticModel(qps; kwargs...)
+    return _all_linear(qps) ? BatchLinearModel(qps; validate = validate, kwargs...) : BatchQuadraticModel(qps; validate = validate, kwargs...)
   end
   error("Unable to select a batch model: the batch does not share common static data or a common sparsity structure")
 end
 
 const LinearBatchQuadraticModel = BatchLinearModel
-const LinearObjRHSBatchQuadraticModel = ObjRHSLinearModel

@@ -56,6 +56,11 @@ struct ObjRHSBatchQuadraticModel{T, S, M1, M2, MT} <: AbstractObjRHSBatchQuadrat
   _AX::MT
 end
 
+function _warn_objrhs_lp()
+  @warn "ObjRHSBatchQuadraticModel is being used for an LP; ObjRHSBatchLinearModel is more efficient" maxlog = 1
+  return nothing
+end
+
 function ObjRHSBatchQuadraticModel(
   qp::QuadraticModel{T, S, M1, M2},
   nbatch::Int;
@@ -68,7 +73,7 @@ function ObjRHSBatchQuadraticModel(
   c = copyto!(MT(undef, qp.meta.nvar, nbatch), repeat(qp.data.c, 1, nbatch)),
   name::String = "ObjRHSBatchQP",
 ) where {T, S, M1, M2}
-  @assert qp.meta.nnzh > 0 "ObjRHSBatchQuadraticModel requires a quadratic model; use ObjRHSLinearModel for LPs"
+  qp.meta.islp && _warn_objrhs_lp()
   @assert _supports_objrhs_batch_matrix(qp.data.H) "Dense batch Hessians are not supported"
   @assert _supports_objrhs_batch_matrix(qp.data.A) "Dense batch Jacobians are not supported"
   nvar = qp.meta.nvar
@@ -87,7 +92,7 @@ function ObjRHSBatchQuadraticModel(
     nnzj = nnzj,
     nnzh = nnzh,
     minimize = qp.meta.minimize,
-    islp = false,
+    islp = qp.meta.islp,
     name = name,
   )
   _HX = MT(undef, nvar, nbatch)
@@ -110,10 +115,14 @@ end
 function ObjRHSBatchQuadraticModel(
   qps::Vector{QP};
   name::String = "ObjRHSBatchQP",
-  MT = typeof(similar(first(qps).data.c, T, 0, 0)),
+  validate::Bool = true,
+  MT = nothing,
 ) where {QP <: QuadraticModel{T, S, M1, M2}} where {T, S, M1, M2}
+  validate && _validate_objrhs_batch(qps, "ObjRHSBatchQuadraticModel")
   nbatch = length(qps)
+  @assert nbatch > 0 "Need at least one model"
   qp1 = first(qps)
+  MT = _resolve_batch_matrix_type(qp1, T, MT)
   x0 = reduce(hcat, [qp.meta.x0 for qp in qps])
   lvar = reduce(hcat, [qp.meta.lvar for qp in qps])
   uvar = reduce(hcat, [qp.meta.uvar for qp in qps])
@@ -177,7 +186,8 @@ function Adapt.adapt_structure(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
     ucon = Adapt.adapt(to, bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = bnlp.meta.nnzh,
-    islp = false,
+    minimize = bnlp.meta.minimize,
+    islp = bnlp.meta.islp,
     name = bnlp.meta.name,
   )
 

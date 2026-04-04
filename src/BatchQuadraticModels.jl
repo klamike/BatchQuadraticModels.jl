@@ -19,8 +19,10 @@ abstract type AbstractObjRHSBatchQuadraticModel{T, MT} <: AbstractBatchQuadratic
 function sparse_operator end
 function operator_sparse_matrix end
 
+_resolve_batch_matrix_type(qp, ::Type{T}, MT) where {T} = MT === nothing ? typeof(similar(qp.data.c, T, 0, 0)) : MT
+
 export ObjRHSBatchQuadraticModel, BatchQuadraticModel
-export ObjRHSLinearModel, BatchLinearModel, batch_model
+export ObjRHSBatchLinearModel, BatchLinearModel, batch_model
 export BatchSparseOp, batch_spmv!, _batch_spmv_impl!, _build_op
 export batch_mapreduce!, batch_maximum!, batch_minimum!, batch_sum!
 export gather_columns!, gather_entries!, batch_spmv_subset!

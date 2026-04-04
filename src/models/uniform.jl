@@ -34,11 +34,14 @@ end
 function BatchQuadraticModel(
   qps::Vector{QP};
   name::String = "SameStructBatchQP",
-  MT = typeof(similar(first(qps).data.c, T, 0, 0)),
+  validate::Bool = true,
+  MT = nothing,
 ) where {QP <: QuadraticModel{T}} where {T}
   nbatch = length(qps)
   @assert nbatch > 0 "Need at least one model"
+  validate && _validate_uniform_batch(qps, "BatchQuadraticModel")
   qp1 = first(qps)
+  MT = _resolve_batch_matrix_type(qp1, T, MT)
   nvar = qp1.meta.nvar
   ncon = qp1.meta.ncon
   nnzj = qp1.meta.nnzj
@@ -157,6 +160,7 @@ function Adapt.adapt_structure(to, bqp::BatchQuadraticModel{T}) where {T}
     ucon = Adapt.adapt(to, bqp.meta.ucon),
     nnzj = bqp.meta.nnzj,
     nnzh = bqp.meta.nnzh,
+    minimize = bqp.meta.minimize,
     islp = bqp.meta.islp,
     name = bqp.meta.name,
   )

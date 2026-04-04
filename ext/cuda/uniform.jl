@@ -27,6 +27,7 @@ function Base.convert(::Type{BatchQuadraticModel{T, MT}}, bnlp::BatchQuadraticMo
     ucon = CuMatrix{T}(bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = bnlp.meta.nnzh,
+    minimize = bnlp.meta.minimize,
     islp = bnlp.meta.islp,
     name = bnlp.meta.name,
   )
@@ -75,6 +76,7 @@ function Base.convert(::Type{BatchLinearModel{T, MT}}, bnlp::BatchLinearModel{T}
     ucon = CuMatrix{T}(bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = 0,
+    minimize = bnlp.meta.minimize,
     islp = true,
     name = bnlp.meta.name,
   )

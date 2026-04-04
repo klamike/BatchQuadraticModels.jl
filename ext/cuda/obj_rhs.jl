@@ -33,7 +33,7 @@ function NLPModels.obj!(
 end
 
 function NLPModels.obj!(
-  bqp::ObjRHSLinearModel{T, S, M1, M2, MT},
+  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
   bx::AbstractMatrix{T}, bf::AbstractVector{T},
 ) where {T, S, M1, M2, MT}
   bs = length(bf)
@@ -53,7 +53,7 @@ function NLPModels.grad!(
 end
 
 function NLPModels.grad!(
-  bqp::ObjRHSLinearModel{T, S, M1, M2, MT},
+  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
   bx::AbstractMatrix{T}, bg::AbstractMatrix{T},
 ) where {T, S, M1, M2, MT}
   copyto!(bg, bqp.c_batch)
@@ -69,7 +69,7 @@ function NLPModels.cons!(
 end
 
 function NLPModels.cons!(
-  bqp::ObjRHSLinearModel{T, S, M1, M2, MT},
+  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
   bx::AbstractMatrix{T}, bc::AbstractMatrix{T},
 ) where {T, S, M1, M2 <: CuSparseOperator, MT}
   mul!(bc, bqp.data.A, bx)
@@ -86,7 +86,7 @@ function NLPModels.jac_structure!(
 end
 
 function NLPModels.jac_structure!(
-  bqp::ObjRHSLinearModel{T, S, M1, M2},
+  bqp::ObjRHSBatchLinearModel{T, S, M1, M2},
   jrows::AbstractVector{<:Integer},
   jcols::AbstractVector{<:Integer},
 ) where {T, S, M1, M2 <: CuSparseOperator}
@@ -113,7 +113,7 @@ function NLPModels.jac_coord!(
 end
 
 function NLPModels.jac_coord!(
-  bqp::ObjRHSLinearModel{T, S, M1, M2},
+  bqp::ObjRHSBatchLinearModel{T, S, M1, M2},
   bx::AbstractMatrix,
   bjvals::AbstractMatrix,
 ) where {T, S, M1, M2 <: CuSparseOperator}
@@ -165,6 +165,7 @@ function Base.convert(::Type{ObjRHSBatchQuadraticModel{T, S}}, bnlp::ObjRHSBatch
     ucon = CuMatrix{T}(bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = bnlp.meta.nnzh,
+    minimize = bnlp.meta.minimize,
     islp = bnlp.meta.islp,
     name = bnlp.meta.name,
   )
@@ -174,7 +175,7 @@ function Base.convert(::Type{ObjRHSBatchQuadraticModel{T, S}}, bnlp::ObjRHSBatch
   )
 end
 
-function Base.convert(::Type{ObjRHSLinearModel{T, S}}, bnlp::ObjRHSLinearModel{T}) where {T, S<:CuArray}
+function Base.convert(::Type{ObjRHSBatchLinearModel{T, S}}, bnlp::ObjRHSBatchLinearModel{T}) where {T, S<:CuArray}
   nbatch = bnlp.meta.nbatch
   nvar = bnlp.meta.nvar
   ncon = bnlp.meta.ncon
@@ -194,11 +195,12 @@ function Base.convert(::Type{ObjRHSLinearModel{T, S}}, bnlp::ObjRHSLinearModel{T
     ucon = CuMatrix{T}(bnlp.meta.ucon),
     nnzj = bnlp.meta.nnzj,
     nnzh = 0,
+    minimize = bnlp.meta.minimize,
     islp = true,
     name = bnlp.meta.name,
   )
 
-  return ObjRHSLinearModel{T, typeof(data_gpu.c), typeof(data_gpu.H), typeof(data_gpu.A), MT}(
+  return ObjRHSBatchLinearModel{T, typeof(data_gpu.c), typeof(data_gpu.H), typeof(data_gpu.A), MT}(
     meta_gpu, data_gpu, c_batch_gpu,
   )
 end
@@ -244,7 +246,7 @@ function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchQuadraticM
   return data_gpu, c_batch_gpu, HX_gpu, AX_gpu
 end
 
-function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSLinearModel{T}) where {T}
+function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchLinearModel{T}) where {T}
   if !(to isa Type{<:CuArray} || to isa CUDABackend)
     return nothing
   end

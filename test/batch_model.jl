@@ -54,7 +54,7 @@
       name = "lp_objrhs_$i",
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
-  @test batch_model(lps_objrhs) isa ObjRHSLinearModel
+  @test batch_model(lps_objrhs) isa ObjRHSBatchLinearModel
 
   lps_uniform = [
     QuadraticModel(

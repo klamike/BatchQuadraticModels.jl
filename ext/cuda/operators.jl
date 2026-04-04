@@ -85,6 +85,7 @@ function LinearAlgebra.mul!(Y::CuMatrix{T}, A::CuSparseOperator{T}, X::CuMatrix{
     A.alpha, A.descA, descX, A.beta, descY,
     T, CUSPARSE.CUSPARSE_SPMM_ALG_DEFAULT, A.spmm_buffer,
   )
+  return Y
 end
 
 function LinearAlgebra.mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}) where {T <: BlasFloat}
@@ -94,13 +95,29 @@ function LinearAlgebra.mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{
   descX = CUSPARSE.CuDenseVectorDescriptor(x)
   algo = CUSPARSE.CUSPARSE_SPMV_ALG_DEFAULT
   CUSPARSE.cusparseSpMV(CUSPARSE.handle(), A.transa, A.alpha, A.descA, descX, A.beta, descY, T, algo, A.buffer)
+  return y
 end
 
 function LinearAlgebra.mul!(Y::CuMatrix{T}, A::CuSparseOperator{T}, X::CuMatrix{T}, α::Number, β::Number) where {T <: BlasFloat}
   A.alpha[] = T(α)
   A.beta[] = T(β)
-  mul!(Y, A, X)
-  A.alpha[] = one(T)
-  A.beta[] = zero(T)
+  try
+    mul!(Y, A, X)
+  finally
+    A.alpha[] = one(T)
+    A.beta[] = zero(T)
+  end
   return Y
+end
+
+function LinearAlgebra.mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}, α::Number, β::Number) where {T <: BlasFloat}
+  A.alpha[] = T(α)
+  A.beta[] = T(β)
+  try
+    mul!(y, A, x)
+  finally
+    A.alpha[] = one(T)
+    A.beta[] = zero(T)
+  end
+  return y
 end

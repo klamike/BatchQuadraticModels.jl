@@ -7,7 +7,7 @@ if CUDA.functional()
   @testset "ObjRHSBatchQuadraticModel sparse adaptation" begin
     qps = [ineqconqp_QP() for _ in 1:3]
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
-    gpu_bqp = convert(BatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
+    gpu_bqp = convert(ObjRHSBatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
 
     @test !(gpu_bqp.data.H isa CuMatrix)
     @test !(gpu_bqp.data.A isa CuMatrix)
@@ -31,6 +31,17 @@ if CUDA.functional()
       @test bj[:, i] ≈ jac_coord(qps[i], xs[i])
       @test bh[:, i] ≈ hess_coord(qps[i], xs[i], ys[i]; obj_weight = Array(w)[i])
     end
+
+    x = CuArray(xs[1])
+    y0 = fill(2.0, size(bc, 1))
+    y = CuArray(y0)
+    expected = 3.0 .* cons(qps[1], xs[1]) .+ 4.0 .* y0
+    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
+
+    bad_x = CUDA.fill(1.0, size(x, 1) + 1)
+    @test_throws DimensionMismatch mul!(y, gpu_bqp.data.A, bad_x, 7.0, 8.0)
+    copyto!(y, y0)
+    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
   end
 
   @testset "BatchQuadraticModel adaptation" begin

@@ -17,7 +17,7 @@ import BatchQuadraticModels:
   BatchSparseOp,
   BatchLinearModel,
   BatchQuadraticModel,
-  ObjRHSLinearModel,
+  ObjRHSBatchLinearModel,
   ObjRHSBatchQuadraticModel,
   batch_mapreduce!,
   gather_columns!,

@@ -150,7 +150,7 @@
   end
 end
 
-@testset "ObjRHSLinearModel" begin
+@testset "ObjRHSBatchLinearModel" begin
   qp = QuadraticModel(
     [-1.0, 2.0],
     spzeros(2, 2);
@@ -172,7 +172,7 @@ end
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
 
-  bqp = ObjRHSLinearModel(qps)
+  bqp = ObjRHSBatchLinearModel(qps)
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   bx = reduce(hcat, xs)
 
@@ -188,4 +188,91 @@ end
     @test bg[:, i] ≈ grad(qps[i], xs[i])
     @test bc[:, i] ≈ cons(qps[i], xs[i])
   end
+end
+
+@testset "ObjRHS constructor validation" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  A1 = sparse([1, 2], [1, 2], [1.0, 1.0], 2, 2)
+  A2 = sparse([1, 1], [1, 2], [3.0, 4.0], 2, 2)
+  lp1 = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A1, c0 = 0.0, bounds...)
+  lp2 = QuadraticModel([3.0, 4.0], spzeros(2, 2); A = A2, c0 = 1.0, bounds...)
+
+  @test_throws AssertionError ObjRHSBatchLinearModel([lp1, lp2])
+  @test ObjRHSBatchLinearModel([lp1, lp2]; validate = false) isa ObjRHSBatchLinearModel
+
+  qp = ineqconqp_QP()
+  qp_bad = QuadraticModel(
+    qp.data.c,
+    qp.data.H.rows,
+    qp.data.H.cols,
+    qp.data.H.vals .* 2.0;
+    Arows = qp.data.A.rows,
+    Acols = qp.data.A.cols,
+    Avals = qp.data.A.vals,
+    lcon = qp.meta.lcon,
+    ucon = qp.meta.ucon,
+    lvar = qp.meta.lvar,
+    uvar = qp.meta.uvar,
+    c0 = qp.data.c0,
+  )
+
+  @test_throws AssertionError ObjRHSBatchQuadraticModel([qp, qp_bad])
+  @test ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = false) isa ObjRHSBatchQuadraticModel
+end
+
+@testset "ObjRHS adapt preserves objective sense" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2)
+  lp = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A, c0 = 0.0, minimize = false, bounds...)
+  blp = ObjRHSBatchLinearModel([lp, lp])
+  @test !blp.meta.minimize
+  @test !Adapt.adapt(Array, blp).meta.minimize
+
+  qp = ineqconqp_QP()
+  qmax = QuadraticModel(
+    qp.data.c,
+    qp.data.H.rows,
+    qp.data.H.cols,
+    qp.data.H.vals;
+    Arows = qp.data.A.rows,
+    Acols = qp.data.A.cols,
+    Avals = qp.data.A.vals,
+    lcon = qp.meta.lcon,
+    ucon = qp.meta.ucon,
+    lvar = qp.meta.lvar,
+    uvar = qp.meta.uvar,
+    c0 = qp.data.c0,
+    minimize = false,
+  )
+  bqp = ObjRHSBatchQuadraticModel([qmax, qmax])
+  @test !bqp.meta.minimize
+  @test !Adapt.adapt(Array, bqp).meta.minimize
+end
+
+@testset "ObjRHSBatchQuadraticModel warns for LPs" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2)
+  lp = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A, c0 = 0.5, bounds...)
+
+  bqp = @test_logs (:warn, r"ObjRHSBatchQuadraticModel is being used for an LP") ObjRHSBatchQuadraticModel([lp, lp])
+  bx = hcat([1.0, 2.0], [0.5, 1.5])
+
+  @test bqp.meta.islp
+  @test bqp.meta.nnzh == 0
+  @test NLPModels.obj(bqp, bx) ≈ [obj(lp, bx[:, 1]), obj(lp, bx[:, 2])]
+  @test Adapt.adapt(Array, bqp).meta.islp
+end
+
+@testset "ObjRHS empty batch validation" begin
+  qp = ineqconqp_QP()
+  lp = QuadraticModel(
+    [1.0, 2.0],
+    spzeros(2, 2);
+    A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2),
+    lcon = [-Inf, -Inf],
+    ucon = [Inf, Inf],
+  )
+
+  @test_throws AssertionError ObjRHSBatchQuadraticModel(typeof(qp)[])
+  @test_throws AssertionError ObjRHSBatchLinearModel(typeof(lp)[])
 end
