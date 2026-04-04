@@ -189,4 +189,47 @@
     @test bh_sub ≈ bhvals[:, roots]
   end
 end
+
+@testset "BatchLinearModel" begin
+  qp = QuadraticModel(
+    [1.0, -2.0],
+    spzeros(2, 2);
+    A = sparse([1, 2, 2], [1, 1, 2], [1.0, -1.0, 2.0], 2, 2),
+    lcon = [-1.0, 0.0],
+    ucon = [2.0, 1.0],
+    c0 = -0.5,
+    name = "linear_uniform",
+  )
+
+  models = [
+    QuadraticModel(
+      qp.data.c .+ cshift,
+      spzeros(2, 2);
+      A = sparse([1, 2, 2], [1, 1, 2], avals, 2, 2),
+      lcon = qp.meta.lcon .+ lshift,
+      ucon = qp.meta.ucon .+ ushift,
+      c0 = qp.data.c0 + c0shift,
+      name = "lp$i",
+    ) for (i, (cshift, avals, lshift, ushift, c0shift)) in enumerate((
+      (0.0, [1.0, -1.0, 2.0], 0.0, 0.0, 0.0),
+      (0.2, [1.2, -1.1, 2.3], -0.2, 0.1, 0.5),
+      (-0.3, [0.8, -0.7, 1.9], 0.1, -0.1, -0.25),
+    ))
+  ]
+
+  bqp = BatchLinearModel(models)
+  xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
+  bx = reduce(hcat, xs)
+
+  bf = NLPModels.obj(bqp, bx)
+  bg = NLPModels.grad(bqp, bx)
+  bc = NLPModels.cons(bqp, bx)
+
+  @test bqp.meta.islp
+  @test bqp.meta.nnzh == 0
+  for i in 1:length(models)
+    @test bf[i] ≈ obj(models[i], xs[i])
+    @test bg[:, i] ≈ grad(models[i], xs[i])
+    @test bc[:, i] ≈ cons(models[i], xs[i])
+  end
 end

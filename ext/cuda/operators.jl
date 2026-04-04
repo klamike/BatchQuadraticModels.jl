@@ -21,9 +21,24 @@ function _coo_to_cu_csr(A::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
   return CUSPARSE.CuSparseMatrixCSR(sparse(A.rows, A.cols, A.vals, size(A)...))
 end
 
+_to_cu_csr(A::SparseMatrixCOO) = _coo_to_cu_csr(A)
+_to_cu_csr(A::SparseMatrixCSC) = CUSPARSE.CuSparseMatrixCSR(A)
+
+function _expand_symmetric_matrix(H::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
+  rows, cols, vals = H.rows, H.cols, H.vals
+  m, n = size(H)
+  offdiag = findall(i -> rows[i] != cols[i], 1:length(rows))
+  new_rows = vcat(rows, cols[offdiag])
+  new_cols = vcat(cols, rows[offdiag])
+  new_vals = vcat(vals, vals[offdiag])
+  return SparseMatrixCOO(m, n, new_rows, new_cols, new_vals)
+end
+
+_expand_symmetric_matrix(H::SparseMatrixCSC) = sparse(Symmetric(H, :L))
+
 for SparseMatrixType in (:(CuSparseMatrixCSR{T}), :(CuSparseMatrixCSC{T}), :(CuSparseMatrixCOO{T}))
   @eval begin
-    function gpu_operator(A::$SparseMatrixType; transa::Char = 'N', symmetric::Bool = false, spmm_ncols::Int = 0) where {T <: BlasFloat}
+    function sparse_operator(A::$SparseMatrixType; transa::Char = 'N', symmetric::Bool = false, spmm_ncols::Int = 0) where {T <: BlasFloat}
       m, n = size(A)
       alpha = Ref{T}(one(T))
       beta = Ref{T}(zero(T))

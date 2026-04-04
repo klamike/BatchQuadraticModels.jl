@@ -73,6 +73,8 @@
   @test bqp.meta.nvar == nvar
   @test bqp.meta.ncon == ncon
   @test bqp.c_batch == bc
+  @test bqp.data.A isa BatchQuadraticModels.AbstractSparseOperator
+  @test bqp.data.H isa BatchQuadraticModels.AbstractSparseOperator
 
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]
@@ -147,4 +149,43 @@
     @test bh_sub ≈ bhvals[:, roots]
   end
 end
+
+@testset "ObjRHSLinearModel" begin
+  qp = QuadraticModel(
+    [-1.0, 2.0],
+    spzeros(2, 2);
+    A = sparse([1, 1, 2], [1, 2, 2], [1.0, -1.0, 2.0], 2, 2),
+    lcon = [0.0, -1.0],
+    ucon = [1.0, 2.0],
+    c0 = 0.5,
+    name = "linear_objrhs",
+  )
+  qps = [
+    QuadraticModel(
+      qp.data.c .+ shift,
+      spzeros(2, 2);
+      A = qp.data.A,
+      lcon = qp.meta.lcon .+ lshift,
+      ucon = qp.meta.ucon .+ ushift,
+      c0 = qp.data.c0,
+      name = "lp$i",
+    ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
+  ]
+
+  bqp = ObjRHSLinearModel(qps)
+  xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
+  bx = reduce(hcat, xs)
+
+  bf = NLPModels.obj(bqp, bx)
+  bg = NLPModels.grad(bqp, bx)
+  bc = NLPModels.cons(bqp, bx)
+
+  @test bqp.meta.islp
+  @test bqp.meta.nnzh == 0
+  @test bqp.data.A isa BatchQuadraticModels.AbstractSparseOperator
+  for i in 1:length(qps)
+    @test bf[i] ≈ obj(qps[i], xs[i])
+    @test bg[:, i] ≈ grad(qps[i], xs[i])
+    @test bc[:, i] ≈ cons(qps[i], xs[i])
+  end
 end

@@ -50,3 +50,43 @@ function Base.convert(::Type{BatchQuadraticModel{T, MT}}, bnlp::BatchQuadraticMo
     HX_gpu,
   )
 end
+
+function Base.convert(::Type{BatchLinearModel{T, MT}}, bnlp::BatchLinearModel{T}) where {T, MT<:CuMatrix}
+  nbatch = bnlp.meta.nbatch
+  nvar = bnlp.meta.nvar
+  ncon = bnlp.meta.ncon
+
+  c_batch_gpu = CuMatrix{T}(bnlp.c_batch)
+  c0_batch_gpu = CuVector{T}(bnlp.c0_batch)
+  A_rows_gpu = CuVector{Int}(bnlp.A_rows)
+  A_cols_gpu = CuVector{Int}(bnlp.A_cols)
+  jac_op_gpu = Adapt.adapt(CuArray, bnlp.jac_op)
+  jact_op_gpu = Adapt.adapt(CuArray, bnlp.jact_op)
+  A_nzvals_gpu = jac_op_gpu.nzVals
+
+  meta_gpu = NLPModels.BatchNLPModelMeta{T, MT}(
+    nbatch,
+    nvar;
+    x0 = CuMatrix{T}(bnlp.meta.x0),
+    lvar = CuMatrix{T}(bnlp.meta.lvar),
+    uvar = CuMatrix{T}(bnlp.meta.uvar),
+    ncon = ncon,
+    lcon = CuMatrix{T}(bnlp.meta.lcon),
+    ucon = CuMatrix{T}(bnlp.meta.ucon),
+    nnzj = bnlp.meta.nnzj,
+    nnzh = 0,
+    islp = true,
+    name = bnlp.meta.name,
+  )
+
+  return BatchLinearModel{T, MT, CuVector{T}, CuVector{Int}}(
+    meta_gpu,
+    c_batch_gpu,
+    c0_batch_gpu,
+    A_nzvals_gpu,
+    A_rows_gpu,
+    A_cols_gpu,
+    jac_op_gpu,
+    jact_op_gpu,
+  )
+end
