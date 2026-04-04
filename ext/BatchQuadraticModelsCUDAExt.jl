@@ -12,11 +12,14 @@ import BatchQuadraticModels
 import BatchQuadraticModels:
   AbstractSparseOperator,
   _batch_spmv_impl!,
+  _batch_spmv_subset_impl!,
   _adapt_to_operator,
   BatchSparseOp,
   BatchQuadraticModel,
   ObjRHSBatchQuadraticModel,
   batch_mapreduce!,
+  gather_columns!,
+  gather_entries!,
   gpu_operator,
   operator_sparse_matrix
 import QuadraticModels: QPData, SparseMatrixCOO, fill_structure!

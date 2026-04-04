@@ -163,4 +163,30 @@
     @test NLPModels.grad(bqp1, bx1)[:, 1] ≈ grad(models[1], xs[1])
     @test NLPModels.cons(bqp1, bx1)[:, 1] ≈ cons(models[1], xs[1])
   end
+
+  @testset "subset kernels match selected columns" begin
+    roots = Int32[1, 3]
+    bx_sub = bx[:, roots]
+    by_sub = by[:, roots]
+    w_sub = bobj_weight[roots]
+
+    bf_sub = zeros(eltype(bx), length(roots))
+    bg_sub = zeros(eltype(bx), nvar, length(roots))
+    bc_sub = zeros(eltype(bx), ncon, length(roots))
+    bj_sub = zeros(eltype(bx), nnzj, length(roots))
+    bh_sub = zeros(eltype(bx), nnzh, length(roots))
+
+    BatchQuadraticModels.obj_subset!(bqp, bx_sub, bf_sub, roots)
+    BatchQuadraticModels.grad_subset!(bqp, bx_sub, bg_sub, roots)
+    BatchQuadraticModels.cons_subset!(bqp, bx_sub, bc_sub, roots)
+    BatchQuadraticModels.jac_coord_subset!(bqp, bx_sub, bj_sub, roots)
+    BatchQuadraticModels.hess_coord_subset!(bqp, bx_sub, by_sub, w_sub, bh_sub, roots)
+
+    @test bf_sub ≈ bf[roots]
+    @test bg_sub ≈ bg[:, roots]
+    @test bc_sub ≈ bc[:, roots]
+    @test bj_sub ≈ bjvals[:, roots]
+    @test bh_sub ≈ bhvals[:, roots]
+  end
+end
 end

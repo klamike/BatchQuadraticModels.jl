@@ -37,3 +37,34 @@ function BatchQuadraticModels.batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat
   kernel(f, op, neutral, out, srcs; threads, blocks = size(out, 2))
   return out
 end
+
+@kernel function _gather_columns_kernel!(dst, @Const(src), @Const(roots))
+  i, j = @index(Global, NTuple)
+  @inbounds dst[i, j] = src[i, roots[j]]
+end
+
+@kernel function _gather_entries_kernel!(dst, @Const(src), @Const(roots))
+  j = @index(Global, Linear)
+  @inbounds dst[j] = src[roots[j]]
+end
+
+function BatchQuadraticModels.gather_columns!(
+  dst::CuMatrix{T},
+  src::CuMatrix{T},
+  roots::AbstractVector{<:Integer},
+) where {T}
+  nactive = size(dst, 2)
+  backend = CUDABackend()
+  _gather_columns_kernel!(backend)(dst, src, roots; ndrange=(size(dst, 1), nactive))
+  return dst
+end
+
+function BatchQuadraticModels.gather_entries!(
+  dst::CuVector{T},
+  src::CuVector{T},
+  roots::AbstractVector{<:Integer},
+) where {T}
+  backend = CUDABackend()
+  _gather_entries_kernel!(backend)(dst, src, roots; ndrange=length(dst))
+  return dst
+end

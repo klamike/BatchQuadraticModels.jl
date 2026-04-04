@@ -23,6 +23,8 @@ function batch_sum! end
 export ObjRHSBatchQuadraticModel, BatchQuadraticModel
 export BatchSparseOp, batch_spmv!, _batch_spmv_impl!, _build_op
 export batch_mapreduce!, batch_maximum!, batch_minimum!, batch_sum!
+export gather_columns!, gather_entries!, batch_spmv_subset!
+export obj_subset!, grad_subset!, cons_subset!, jac_coord_subset!, hess_coord_subset!
 
 include("batch_mapreduce.jl")
 include("batch_spmv.jl")

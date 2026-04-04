@@ -15,7 +15,7 @@ function _structure_arrays(A::SparseMatrixCSC)
   return rows, cols
 end
 
-struct BatchQuadraticModel{T, MT, VT <: AbstractVector{T}, VI <: AbstractVector{Int}} <: NLPModels.AbstractBatchNLPModel{T, MT}
+struct BatchQuadraticModel{T, MT, VT <: AbstractVector{T}, VI <: AbstractVector{Int}} <: AbstractUniformBatchQuadraticModel{T, MT}
   meta::NLPModels.BatchNLPModelMeta{T, MT}
   c_batch::MT
   c0_batch::VT
@@ -188,14 +188,53 @@ function NLPModels.obj!(bqp::BatchQuadraticModel{T}, bx::AbstractMatrix, bf::Abs
   return bf
 end
 
+function obj_subset!(
+  bqp::BatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bf::AbstractVector,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  na = length(roots)
+  HX = view(bqp._HX, :, 1:na)
+  bf_mat = reshape(bf, 1, na)
+  gather_columns!(HX, bqp.c_batch, roots)
+  batch_spmv_subset!(HX, bqp.hess_op, bx, roots, T(0.5), one(T))
+  batch_mapreduce!(*, +, zero(T), bf_mat, HX, bx)
+  @inbounds for j in eachindex(roots)
+    bf[j] += bqp.c0_batch[Int(roots[j])]
+  end
+  return bf
+end
+
 function NLPModels.grad!(bqp::BatchQuadraticModel{T}, bx::AbstractMatrix, bg::AbstractMatrix) where {T}
   batch_spmv!(bg, bqp.hess_op, bx)
   bg .+= bqp.c_batch
   return bg
 end
 
+function grad_subset!(
+  bqp::BatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bg::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  gather_columns!(bg, bqp.c_batch, roots)
+  batch_spmv_subset!(bg, bqp.hess_op, bx, roots, one(T), one(T))
+  return bg
+end
+
 function NLPModels.cons!(bqp::BatchQuadraticModel{T}, bx::AbstractMatrix, bc::AbstractMatrix) where {T}
   batch_spmv!(bc, bqp.jac_op, bx)
+  return bc
+end
+
+function cons_subset!(
+  bqp::BatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bc::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  batch_spmv_subset!(bc, bqp.jac_op, bx, roots)
   return bc
 end
 
@@ -216,6 +255,16 @@ function NLPModels.jac_coord!(
   bjvals::AbstractMatrix,
 )
   bjvals .= bqp.A_nzvals
+  return bjvals
+end
+
+function jac_coord_subset!(
+  bqp::BatchQuadraticModel,
+  bx::AbstractMatrix,
+  bjvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+)
+  gather_columns!(bjvals, bqp.A_nzvals, roots)
   return bjvals
 end
 
@@ -247,6 +296,19 @@ function NLPModels.hess_coord!(
   bhvals::AbstractMatrix,
 ) where {T}
   bhvals .= bqp.H_nzvals .* bobj_weight'
+  return bhvals
+end
+
+function hess_coord_subset!(
+  bqp::BatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  by::AbstractMatrix,
+  bobj_weight::AbstractVector,
+  bhvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  gather_columns!(bhvals, bqp.H_nzvals, roots)
+  bhvals .*= bobj_weight'
   return bhvals
 end
 

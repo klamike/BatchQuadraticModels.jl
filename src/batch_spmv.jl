@@ -87,6 +87,18 @@ function batch_spmv!(
   _batch_spmv_impl!(out, op, B, alpha, beta, Int32(val_offset))
 end
 
+function batch_spmv_subset!(
+  out::AbstractMatrix{T},
+  op::BatchSparseOp,
+  B::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+  alpha::T = one(T),
+  beta::T = zero(T);
+  val_offset::Int = 0,
+) where {T}
+  _batch_spmv_subset_impl!(out, op, B, roots, alpha, beta, Int32(val_offset))
+end
+
 function _batch_spmv_impl!(
   out::AbstractMatrix{T}, op::BatchSparseOp, B::AbstractMatrix,
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
@@ -99,6 +111,31 @@ function _batch_spmv_impl!(
       acc = zero(T)
       for k in op.rowptr[r]:(op.rowptr[r + 1] - 1)
         acc += op.nzVals[op.flat_nz[k], j] * B[op.flat_val[k] + val_offset, j]
+      end
+      out[r, j] = beta_is_zero ? alpha * acc : alpha * acc + beta * out[r, j]
+    end
+  end
+  return out
+end
+
+function _batch_spmv_subset_impl!(
+  out::AbstractMatrix{T},
+  op::BatchSparseOp,
+  B::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+  alpha::T,
+  beta::T,
+  val_offset::Int32 = Int32(0),
+) where {T}
+  nout = length(op.rowptr) - 1
+  bs = length(roots)
+  beta_is_zero = iszero(beta)
+  @inbounds for r in 1:nout
+    for j in 1:bs
+      root_j = Int(roots[j])
+      acc = zero(T)
+      for k in op.rowptr[r]:(op.rowptr[r + 1] - 1)
+        acc += op.nzVals[op.flat_nz[k], root_j] * B[op.flat_val[k] + val_offset, j]
       end
       out[r, j] = beta_is_zero ? alpha * acc : alpha * acc + beta * out[r, j]
     end

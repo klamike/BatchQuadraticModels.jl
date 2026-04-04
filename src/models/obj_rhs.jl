@@ -1,6 +1,6 @@
 _supports_objrhs_batch_matrix(A) = A isa SparseMatrixCOO || A isa SparseMatrixCSC
 
-struct ObjRHSBatchQuadraticModel{T, S, M1, M2, MT} <: NLPModels.AbstractBatchNLPModel{T, MT}
+struct ObjRHSBatchQuadraticModel{T, S, M1, M2, MT} <: AbstractObjRHSBatchQuadraticModel{T, MT}
   meta::NLPModels.BatchNLPModelMeta{T, MT}
   data::QPData{T, S, M1, M2}
   c_batch::MT
@@ -140,6 +140,30 @@ function NLPModels.obj!(bqp::ObjRHSBatchQuadraticModel{T}, bx::AbstractMatrix, b
   return bf
 end
 
+function obj_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bf::AbstractVector,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  na = length(roots)
+  bf_mat = reshape(bf, 1, na)
+  HX = view(bqp._HX, :, 1:na)
+  if !bqp.meta.islp
+    mul!(HX, Symmetric(bqp.data.H, :L), bx)
+    HX .*= T(0.5)
+    ctmp = similar(HX)
+    gather_columns!(ctmp, bqp.c_batch, roots)
+    HX .+= ctmp
+    batch_mapreduce!(*, +, zero(T), bf_mat, HX, bx)
+  else
+    gather_columns!(HX, bqp.c_batch, roots)
+    batch_mapreduce!(*, +, zero(T), bf_mat, HX, bx)
+  end
+  bf .+= bqp.data.c0
+  return bf
+end
+
 function NLPModels.grad!(bqp::ObjRHSBatchQuadraticModel{T}, bx::AbstractMatrix, bg::AbstractMatrix) where {T}
     if !bqp.meta.islp
         mul!(bg, Symmetric(bqp.data.H, :L), bx)
@@ -150,7 +174,33 @@ function NLPModels.grad!(bqp::ObjRHSBatchQuadraticModel{T}, bx::AbstractMatrix, 
   return bg
 end
 
+function grad_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bg::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T}
+  if !bqp.meta.islp
+    mul!(view(bqp._HX, :, 1:length(roots)), Symmetric(bqp.data.H, :L), bx)
+    gather_columns!(bg, bqp.c_batch, roots)
+    bg .+= view(bqp._HX, :, 1:length(roots))
+  else
+    gather_columns!(bg, bqp.c_batch, roots)
+  end
+  return bg
+end
+
 function NLPModels.cons!(bqp::ObjRHSBatchQuadraticModel{T}, bx::AbstractMatrix, bc::AbstractMatrix) where {T}
+  mul!(bc, bqp.data.A, bx)
+  return bc
+end
+
+function cons_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T},
+  bx::AbstractMatrix,
+  bc::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T}
   mul!(bc, bqp.data.A, bx)
   return bc
 end
@@ -185,10 +235,30 @@ function NLPModels.jac_coord!(
   return bjvals
 end
 
+function jac_coord_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
+  bx::AbstractMatrix,
+  bjvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T, S, M1, M2 <: SparseMatrixCOO}
+  bjvals .= bqp.data.A.vals
+  return bjvals
+end
+
 function NLPModels.jac_coord!(
   bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
   bx::AbstractMatrix,
   bjvals::AbstractMatrix,
+) where {T, S, M1, M2 <: SparseMatrixCSC}
+  bjvals .= bqp.data.A.nzval
+  return bjvals
+end
+
+function jac_coord_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
+  bx::AbstractMatrix,
+  bjvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
 ) where {T, S, M1, M2 <: SparseMatrixCSC}
   bjvals .= bqp.data.A.nzval
   return bjvals
@@ -234,12 +304,39 @@ function NLPModels.hess_coord!(
   return bhvals
 end
 
+function hess_coord_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
+  bx::AbstractMatrix,
+  by::AbstractMatrix,
+  bobj_weight::AbstractVector,
+  bhvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
+) where {T, S, M1 <: SparseMatrixCOO, M2}
+  mul!(bhvals, bqp.data.H.vals, bobj_weight')
+  return bhvals
+end
+
 function NLPModels.hess_coord!(
   bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
   bx::AbstractMatrix,
   by::AbstractMatrix,
   bobj_weight::AbstractVector,
   bhvals::AbstractMatrix,
+) where {T, S, M1 <: SparseMatrixCSC, M2}
+  H = bqp.data.H
+  nnzh = nnz(H)
+  nnzh == 0 && return bhvals
+  mul!(bhvals, H.nzVal, bobj_weight')
+  return bhvals
+end
+
+function hess_coord_subset!(
+  bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
+  bx::AbstractMatrix,
+  by::AbstractMatrix,
+  bobj_weight::AbstractVector,
+  bhvals::AbstractMatrix,
+  roots::AbstractVector{<:Integer},
 ) where {T, S, M1 <: SparseMatrixCSC, M2}
   H = bqp.data.H
   nnzh = nnz(H)
