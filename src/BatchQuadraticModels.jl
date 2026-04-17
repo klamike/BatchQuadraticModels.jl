@@ -148,7 +148,7 @@ export BatchSparseOp, batch_spmv!
 export batch_mapreduce!, batch_maximum!, batch_minimum!, batch_sum!
 export gather_columns!, gather_entries!, batch_spmv_subset!
 export obj_subset!, grad_subset!, cons_subset!, jac_coord_subset!, hess_coord_subset!
-export standard_form, update_standard_form!, recover_primal!, recover_primal, recover_variable_multipliers!, StandardFormWorkspace
+export standard_form, update_standard_form!, recover_primal!, recover_primal, recover_variable_multipliers!, StandardFormWorkspace, BatchStandardFormWorkspace
 
 include("batch_mapreduce.jl")
 include("batch_spmv.jl")
@@ -158,5 +158,6 @@ include("models/uniform.jl")
 include("models/obj_rhs.jl")
 include("models/linear.jl")
 include("standard_form.jl")
+include("standard_form_batch.jl")
 
 end # module BatchQuadraticModels

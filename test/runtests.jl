@@ -102,4 +102,5 @@ end
 include("objrhsbatchqp.jl")
 include("batchqp.jl")
 include("batch_model.jl")
+include("standard_form_batch.jl")
 include("cuda.jl")
