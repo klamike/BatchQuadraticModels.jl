@@ -1,7 +1,8 @@
 """
     _coo_to_csr(indices, n) -> (rowptr, colidx)
 
-Convert COO row/column indices to CSR format.
+Convert COO row indices to CSR row pointers together with the permutation that
+groups nonzeros by row.
 """
 function _coo_to_csr(indices::AbstractVector{Int}, n::Int)
   nnz = length(indices)
@@ -23,62 +24,45 @@ function _coo_to_csr(indices::AbstractVector{Int}, n::Int)
   return rowptr, colidx
 end
 
-struct BatchSparseOp{VI, VI64, MT}
-  nzVals::MT
+abstract type BatchSparseOp end
+
+struct HostBatchSparseOp{MT, VI <: AbstractVector{Int}} <: BatchSparseOp
+  nzvals::MT
   rowptr::VI
-  flat_nz::VI
-  flat_val::VI
-  flat_packed::VI64  # TODO: benchmark packed vs unpacked
+  nz_idx::VI
+  val_idx::VI
+end
+
+struct DeviceBatchSparseOp{MT, VI32 <: AbstractVector{Int32}, VI64 <: AbstractVector{Int64}} <: BatchSparseOp
+  nzvals::MT
+  rowptr::VI32
+  packed::VI64
   mean_row_nnz::Float64
 end
 
-function Adapt.adapt_structure(to, op::BatchSparseOp)
-  return BatchSparseOp(
-    Adapt.adapt(to, op.nzVals),
-    Adapt.adapt(to, op.rowptr),
-    Adapt.adapt(to, op.flat_nz),
-    Adapt.adapt(to, op.flat_val),
-    Adapt.adapt(to, op.flat_packed),
-    op.mean_row_nnz,
-  )
-end
-
 @inline _pack_nz_val(nz::Int32, val::Int32) = (Int64(nz) << 32) | Int64(val)
-@inline _unpack_nz(packed::Int64) = Int32(packed >> 32)
-@inline _unpack_val(packed::Int64) = Int32(packed & 0xffffffff)
 
-# Compute row nnz stats so CUDA extension can decide when to use scalar vs warp kernels
 function _row_stats(rowptr::AbstractVector)
   nrows = length(rowptr) - 1
-  nrows == 0 && return Float64(0)
-  total = Int32(0)
+  nrows == 0 && return 0.0
+  total = 0
   @inbounds for r in 1:nrows
-    rl = Int32(rowptr[r + 1] - rowptr[r])
-    total += rl
+    total += rowptr[r + 1] - rowptr[r]
   end
-  return Float64(total / nrows)
+  return total / nrows
 end
 
-function _build_op(nzVals, rowptr, nz_map, val_map, colidx)
-  rowptr32 = Int32.(rowptr)
-  mean_nnz = _row_stats(rowptr32)
-  flat_nz = similar(nz_map, Int32, length(colidx))
-  flat_val = similar(val_map, Int32, length(colidx))
-  if length(colidx) > 0
-    flat_nz .= nz_map[colidx]
-    flat_val .= val_map[colidx]
+function _build_host_op(nzvals, rowptr, nz_map, val_map, colidx)
+  nz_idx = similar(nz_map, Int, length(colidx))
+  val_idx = similar(val_map, Int, length(colidx))
+  if !isempty(colidx)
+    nz_idx .= nz_map[colidx]
+    val_idx .= val_map[colidx]
   end
-  flat_packed = Vector{Int64}(undef, length(colidx))
-  for i in eachindex(flat_packed)
-    flat_packed[i] = _pack_nz_val(flat_nz[i], flat_val[i])
-  end
-  return BatchSparseOp(nzVals, rowptr32, flat_nz, flat_val, flat_packed, mean_nnz)
+  return HostBatchSparseOp(nzvals, rowptr, nz_idx, val_idx)
 end
 
-function _build_storage_op(nzVals, rowptr, nz_map, val_map, colidx)
-  cpu_op = _build_op(nzVals, rowptr, nz_map, val_map, colidx)
-  return nzVals isa Matrix ? cpu_op : Adapt.adapt(typeof(nzVals), cpu_op)
-end
+_build_op(nzvals::Matrix, rowptr, nz_map, val_map, colidx) = _build_host_op(nzvals, rowptr, nz_map, val_map, colidx)
 
 function batch_spmv!(
   out::AbstractMatrix{T}, op::BatchSparseOp, B::AbstractMatrix,
@@ -100,7 +84,7 @@ function batch_spmv_subset!(
 end
 
 function _batch_spmv_impl!(
-  out::AbstractMatrix{T}, op::BatchSparseOp, B::AbstractMatrix,
+  out::AbstractMatrix{T}, op::HostBatchSparseOp, B::AbstractMatrix,
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
 ) where {T}
   nout = length(op.rowptr) - 1
@@ -110,7 +94,7 @@ function _batch_spmv_impl!(
     for j in 1:bs
       acc = zero(T)
       for k in op.rowptr[r]:(op.rowptr[r + 1] - 1)
-        acc += op.nzVals[op.flat_nz[k], j] * B[op.flat_val[k] + val_offset, j]
+        acc += op.nzvals[op.nz_idx[k], j] * B[op.val_idx[k] + val_offset, j]
       end
       out[r, j] = beta_is_zero ? alpha * acc : alpha * acc + beta * out[r, j]
     end
@@ -120,7 +104,7 @@ end
 
 function _batch_spmv_subset_impl!(
   out::AbstractMatrix{T},
-  op::BatchSparseOp,
+  op::HostBatchSparseOp,
   B::AbstractMatrix,
   roots::AbstractVector{<:Integer},
   alpha::T,
@@ -135,7 +119,7 @@ function _batch_spmv_subset_impl!(
       root_j = Int(roots[j])
       acc = zero(T)
       for k in op.rowptr[r]:(op.rowptr[r + 1] - 1)
-        acc += op.nzVals[op.flat_nz[k], root_j] * B[op.flat_val[k] + val_offset, j]
+        acc += op.nzvals[op.nz_idx[k], root_j] * B[op.val_idx[k] + val_offset, j]
       end
       out[r, j] = beta_is_zero ? alpha * acc : alpha * acc + beta * out[r, j]
     end

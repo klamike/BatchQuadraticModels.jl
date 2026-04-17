@@ -9,9 +9,9 @@
   Arows = qp.data.A.rows
   Acols = qp.data.A.cols
   Avals_base = qp.data.A.vals
-  Hrows = qp.data.H.rows
-  Hcols = qp.data.H.cols
-  Hvals_base = qp.data.H.vals
+  Hrows = qp.data.Q.rows
+  Hcols = qp.data.Q.cols
+  Hvals_base = qp.data.Q.vals
 
   c_batches = [copy(qp.data.c), qp.data.c .* 2.0, qp.data.c .+ 0.5]
   c0_batches = [qp.data.c0, 2.0, -1.0]
@@ -252,15 +252,15 @@ end
     bounds...,
   )
 
-  @test_throws AssertionError BatchLinearModel([lp1, lp2])
+  @test_throws AssertionError BatchLinearModel([lp1, lp2]; validate = true)
   @test BatchLinearModel([lp1, lp2]; validate = false) isa BatchLinearModel
 
   qp1 = ineqconqp_QP()
   qp2 = QuadraticModel(
     qp1.data.c,
-    qp1.data.H.rows,
-    qp1.data.H.cols,
-    qp1.data.H.vals;
+    qp1.data.Q.rows,
+    qp1.data.Q.cols,
+    qp1.data.Q.vals;
     Arows = [1, 2, 2, 3, 3, 1],
     Acols = [1, 1, 2, 1, 2, 2],
     Avals = qp1.data.A.vals,
@@ -271,7 +271,7 @@ end
     c0 = qp1.data.c0,
   )
 
-  @test_throws AssertionError BatchQuadraticModel([qp1, qp2])
+  @test_throws AssertionError BatchQuadraticModel([qp1, qp2]; validate = true)
   @test BatchQuadraticModel([qp1, qp2]; validate = false) isa BatchQuadraticModel
 end
 
@@ -295,9 +295,9 @@ end
   qp_models = [
     QuadraticModel(
       qp.data.c,
-      qp.data.H.rows,
-      qp.data.H.cols,
-      qp.data.H.vals .* scale;
+      qp.data.Q.rows,
+      qp.data.Q.cols,
+      qp.data.Q.vals .* scale;
       Arows = qp.data.A.rows,
       Acols = qp.data.A.cols,
       Avals = qp.data.A.vals .+ shift,

@@ -3,9 +3,9 @@
   qps_objrhs = [
     QuadraticModel(
       qp.data.c .+ shift,
-      qp.data.H.rows,
-      qp.data.H.cols,
-      qp.data.H.vals;
+      qp.data.Q.rows,
+      qp.data.Q.cols,
+      qp.data.Q.vals;
       Arows = qp.data.A.rows,
       Acols = qp.data.A.cols,
       Avals = qp.data.A.vals,
@@ -20,9 +20,9 @@
   qps_uniform = [
     QuadraticModel(
       qp.data.c .+ shift,
-      qp.data.H.rows,
-      qp.data.H.cols,
-      qp.data.H.vals .* hscale;
+      qp.data.Q.rows,
+      qp.data.Q.cols,
+      qp.data.Q.vals .* hscale;
       Arows = qp.data.A.rows,
       Acols = qp.data.A.cols,
       Avals = qp.data.A.vals .+ ashift,
