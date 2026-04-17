@@ -64,7 +64,7 @@ if CUDA.functional()
         ucon = qp.meta.ucon,
         lvar = qp.meta.lvar,
         uvar = qp.meta.uvar,
-        c0 = qp.data.c0 + c0shift,
+        c0 = qp.data.c0[] + c0shift,
       ) for (shift, scale, ashift, c0shift) in
         ((0.0, 1.0, 0.0, 0.0), (0.2, 2.0, 0.1, 1.0), (-0.1, 0.5, -0.1, -0.5))
     ]

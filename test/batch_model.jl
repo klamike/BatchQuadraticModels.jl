@@ -11,7 +11,7 @@
       Avals = qp.data.A.vals,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
-      c0 = qp.data.c0,
+      c0 = qp.data.c0[],
       name = "qp_objrhs_$i",
     ) for (i, shift) in enumerate((0.0, 0.2, -0.1))
   ]
@@ -28,7 +28,7 @@
       Avals = qp.data.A.vals .+ ashift,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
-      c0 = qp.data.c0 + c0shift,
+      c0 = qp.data.c0[] + c0shift,
       name = "qp_uniform_$i",
     ) for (i, (shift, hscale, ashift, c0shift)) in enumerate(((0.0, 1.0, 0.0, 0.0), (0.2, 2.0, 0.1, 0.5), (-0.1, 0.5, -0.2, -0.25)))
   ]
@@ -50,7 +50,7 @@
       A = lp.data.A,
       lcon = lp.meta.lcon .+ lshift,
       ucon = lp.meta.ucon .+ ushift,
-      c0 = lp.data.c0,
+      c0 = lp.data.c0[],
       name = "lp_objrhs_$i",
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
@@ -63,7 +63,7 @@
       A = sparse([1, 1, 2], [1, 2, 2], avals, 2, 2),
       lcon = lp.meta.lcon,
       ucon = lp.meta.ucon,
-      c0 = lp.data.c0 + c0shift,
+      c0 = lp.data.c0[] + c0shift,
       name = "lp_uniform_$i",
     ) for (i, (shift, avals, c0shift)) in enumerate((
       (0.0, [1.0, -1.0, 2.0], 0.0),

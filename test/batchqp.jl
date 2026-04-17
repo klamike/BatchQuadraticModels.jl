@@ -14,7 +14,7 @@
   Hvals_base = qp.data.Q.vals
 
   c_batches = [copy(qp.data.c), qp.data.c .* 2.0, qp.data.c .+ 0.5]
-  c0_batches = [qp.data.c0, 2.0, -1.0]
+  c0_batches = [qp.data.c0[], 2.0, -1.0]
   Avals_batches = [copy(Avals_base), Avals_base .* 1.5, Avals_base .+ 0.1]
   Hvals_batches = [copy(Hvals_base), Hvals_base .* 3.0, Hvals_base .+ 0.5]
   lvar_batches = [copy(qp.meta.lvar), qp.meta.lvar .- 0.5, qp.meta.lvar .+ 0.5]
@@ -208,7 +208,7 @@ end
       A = sparse([1, 2, 2], [1, 1, 2], avals, 2, 2),
       lcon = qp.meta.lcon .+ lshift,
       ucon = qp.meta.ucon .+ ushift,
-      c0 = qp.data.c0 + c0shift,
+      c0 = qp.data.c0[] + c0shift,
       name = "lp$i",
     ) for (i, (cshift, avals, lshift, ushift, c0shift)) in enumerate((
       (0.0, [1.0, -1.0, 2.0], 0.0, 0.0, 0.0),
@@ -268,7 +268,7 @@ end
     ucon = qp1.meta.ucon,
     lvar = qp1.meta.lvar,
     uvar = qp1.meta.uvar,
-    c0 = qp1.data.c0,
+    c0 = qp1.data.c0[],
   )
 
   @test_throws AssertionError BatchQuadraticModel([qp1, qp2]; validate = true)
@@ -305,7 +305,7 @@ end
       ucon = qp.meta.ucon,
       lvar = qp.meta.lvar,
       uvar = qp.meta.uvar,
-      c0 = qp.data.c0,
+      c0 = qp.data.c0[],
       minimize = false,
     ) for (scale, shift) in ((1.0, 0.0), (2.0, 0.5))
   ]

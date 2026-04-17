@@ -1,6 +1,7 @@
 module BatchQuadraticModelsCUDAExt
 
 using Adapt
+using Atomix: Atomix
 using CUDA
 using CUDA.CUSPARSE
 using KernelAbstractions
@@ -42,5 +43,6 @@ include("cuda/mapreduce.jl")
 include("cuda/batch_spmv.jl")
 include("cuda/obj_rhs.jl")
 include("cuda/uniform.jl")
+include("cuda/standard_form.jl")
 
 end # module BatchQuadraticModelsCUDAExt

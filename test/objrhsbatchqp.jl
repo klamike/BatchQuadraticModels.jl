@@ -45,7 +45,7 @@
       ucon = ucon_batches[i],
       lvar = lvar_batches[i],
       uvar = uvar_batches[i],
-      c0 = qp.data.c0,
+      c0 = qp.data.c0[],
       name = "batch$i",
     ) for i in 1:nbatch
   ]
@@ -167,7 +167,7 @@ end
       A = qp.data.A,
       lcon = qp.meta.lcon .+ lshift,
       ucon = qp.meta.ucon .+ ushift,
-      c0 = qp.data.c0,
+      c0 = qp.data.c0[],
       name = "lp$i",
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
@@ -213,7 +213,7 @@ end
     ucon = qp.meta.ucon,
     lvar = qp.meta.lvar,
     uvar = qp.meta.uvar,
-    c0 = qp.data.c0,
+    c0 = qp.data.c0[],
   )
 
   @test_throws AssertionError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = true)
@@ -241,7 +241,7 @@ end
     ucon = qp.meta.ucon,
     lvar = qp.meta.lvar,
     uvar = qp.meta.uvar,
-    c0 = qp.data.c0,
+    c0 = qp.data.c0[],
     minimize = false,
   )
   bqp = ObjRHSBatchQuadraticModel([qmax, qmax])
