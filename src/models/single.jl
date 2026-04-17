@@ -58,7 +58,7 @@ struct LPData{T, VT, M}
   lvar::VT
   uvar::VT
   c::VT
-  c0::T
+  c0::Base.RefValue{T}
 end
 
 function LPData(
@@ -70,7 +70,8 @@ function LPData(
   uvar::VT = _default_uvar(c),
   c0 = zero(eltype(c)),
 ) where {VT, M}
-  return LPData(A, lcon, ucon, lvar, uvar, c, c0)
+  T = eltype(c)
+  return LPData{T, VT, M}(A, lcon, ucon, lvar, uvar, c, c0 isa Base.RefValue ? c0 : Ref{T}(c0))
 end
 
 mutable struct LinearModel{T, VT, M} <: NLPModels.AbstractNLPModel{T, VT}
@@ -116,11 +117,8 @@ struct QPData{T, VT, MQ, MA}
   lvar::VT
   uvar::VT
   c::VT
-  c0::T
+  c0::Base.RefValue{T}
   _v::VT
-  regularize::Bool
-  selected
-  σ::T
 end
 
 function QPData(
@@ -133,11 +131,9 @@ function QPData(
   uvar::VT = _default_uvar(c),
   c0 = zero(eltype(c)),
   _v::VT = similar(c),
-  regularize::Bool = false,
-  selected = nothing,
-  σ = zero(eltype(c)),
 ) where {VT, MQ, MA}
-  return QPData(A, Q, lcon, ucon, lvar, uvar, c, c0, _v, regularize, selected, σ)
+  T = eltype(c)
+  return QPData{T, VT, MQ, MA}(A, Q, lcon, ucon, lvar, uvar, c, c0 isa Base.RefValue ? c0 : Ref{T}(c0), _v)
 end
 
 mutable struct QuadraticModel{T, VT, MQ, MA} <: NLPModels.AbstractNLPModel{T, VT}
@@ -177,7 +173,7 @@ end
 
 function NLPModels.obj(lp::LinearModel, x::AbstractVector)
   NLPModels.increment!(lp, :neval_obj)
-  return lp.data.c0 + dot(lp.data.c, x)
+  return lp.data.c0[] + dot(lp.data.c, x)
 end
 
 function NLPModels.grad!(lp::LinearModel, x::AbstractVector, g::AbstractVector)
@@ -220,7 +216,7 @@ NLPModels.hess_coord!(lp::LinearModel, x::AbstractVector, y::AbstractVector, hes
 function NLPModels.obj(qp::QuadraticModel, x::AbstractVector)
   NLPModels.increment!(qp, :neval_obj)
   mul!(qp.data._v, sparse_operator(qp.data.Q; symmetric = true), x)
-  return qp.data.c0 + dot(qp.data.c, x) + dot(qp.data._v, x) / 2
+  return qp.data.c0[] + dot(qp.data.c, x) + dot(qp.data._v, x) / 2
 end
 
 function NLPModels.grad!(qp::QuadraticModel, x::AbstractVector, g::AbstractVector)

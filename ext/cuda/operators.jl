@@ -132,51 +132,28 @@ function _cu_sparse_operator(source, op; spmm_ncols::Int = 0, premake_spmv = ('N
   return CuSparseOperator{T, typeof(source), typeof(op)}(m, n, source, op, descA, buffer_N, buffer_T, spmm_buffer_N, spmm_buffer_T)
 end
 
-for SparseMatrixType in (:(CuSparseMatrixCSR{T}), :(CuSparseMatrixCSC{T}), :(CuSparseMatrixCOO{T}))
-  @eval begin
-    function sparse_operator(
-      A::$SparseMatrixType;
-      transa::Char = 'N',
-      symmetric::Bool = false,
-      spmm_ncols::Int = 0,
-      premake_spmv = ('N',),
-      premake_spmm = ('N',),
-    ) where {T <: BlasFloat}
-      op = symmetric && nnz(A) > 0 ? tril(A, -1) + A' : A
-      sparse = _cu_sparse_operator(A, op; spmm_ncols = spmm_ncols, premake_spmv = premake_spmv, premake_spmm = spmm_ncols > 0 ? (premake_spmm..., transa) : premake_spmm)
-      return transa == 'N' ? sparse : transpose(sparse)
-    end
-  end
+const _CuSparseMatrix{T} = Union{CuSparseMatrixCSR{T}, CuSparseMatrixCSC{T}, CuSparseMatrixCOO{T}}
+
+function sparse_operator(
+  A::_CuSparseMatrix{T};
+  transa::Char = 'N',
+  symmetric::Bool = false,
+  spmm_ncols::Int = 0,
+  premake_spmv = ('N',),
+  premake_spmm = ('N',),
+) where {T <: BlasFloat}
+  op = symmetric && nnz(A) > 0 ? tril(A, -1) + A' : A
+  sparse = _cu_sparse_operator(A, op; spmm_ncols = spmm_ncols, premake_spmv = premake_spmv, premake_spmm = spmm_ncols > 0 ? (premake_spmm..., transa) : premake_spmm)
+  return transa == 'N' ? sparse : transpose(sparse)
 end
 
-function LinearAlgebra.mul!(Y::CuMatrix{T}, A::CuSparseOperator{T}, X::CuMatrix{T}) where {T <: BlasFloat}
-  return _mul!(Y, A, X, 'N', one(T), zero(T))
-end
+const _CuArrT{T} = Union{CuMatrix{T}, CuVector{T}}
 
-function LinearAlgebra.mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}) where {T <: BlasFloat}
-  return _mul!(y, A, x, 'N', one(T), zero(T))
-end
-
-function LinearAlgebra.mul!(Y::CuMatrix{T}, A::CuSparseOperator{T}, X::CuMatrix{T}, α::Number, β::Number) where {T <: BlasFloat}
-  return _mul!(Y, A, X, 'N', T(α), T(β))
-end
-
-function LinearAlgebra.mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}, α::Number, β::Number) where {T <: BlasFloat}
-  return _mul!(y, A, x, 'N', T(α), T(β))
-end
-
-function LinearAlgebra.mul!(Y::CuMatrix{T}, At::Transpose{T, <:CuSparseOperator{T}}, X::CuMatrix{T}) where {T <: BlasFloat}
-  return _mul!(Y, parent(At), X, 'T', one(T), zero(T))
-end
-
-function LinearAlgebra.mul!(y::CuVector{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::CuVector{T}) where {T <: BlasFloat}
-  return _mul!(y, parent(At), x, 'T', one(T), zero(T))
-end
-
-function LinearAlgebra.mul!(Y::CuMatrix{T}, At::Transpose{T, <:CuSparseOperator{T}}, X::CuMatrix{T}, α::Number, β::Number) where {T <: BlasFloat}
-  return _mul!(Y, parent(At), X, 'T', T(α), T(β))
-end
-
-function LinearAlgebra.mul!(y::CuVector{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::CuVector{T}, α::Number, β::Number) where {T <: BlasFloat}
-  return _mul!(y, parent(At), x, 'T', T(α), T(β))
-end
+LinearAlgebra.mul!(y::_CuArrT{T}, A::CuSparseOperator{T}, x::_CuArrT{T}, α::Number, β::Number) where {T <: BlasFloat} =
+  _mul!(y, A, x, 'N', T(α), T(β))
+LinearAlgebra.mul!(y::_CuArrT{T}, A::CuSparseOperator{T}, x::_CuArrT{T}) where {T <: BlasFloat} =
+  _mul!(y, A, x, 'N', one(T), zero(T))
+LinearAlgebra.mul!(y::_CuArrT{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::_CuArrT{T}, α::Number, β::Number) where {T <: BlasFloat} =
+  _mul!(y, parent(At), x, 'T', T(α), T(β))
+LinearAlgebra.mul!(y::_CuArrT{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::_CuArrT{T}) where {T <: BlasFloat} =
+  _mul!(y, parent(At), x, 'T', one(T), zero(T))

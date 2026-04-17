@@ -19,21 +19,11 @@ function BatchQuadraticModel(
   validate::Bool = false,
   MT = nothing,
 ) where {QP <: QuadraticModel{T}} where {T}
+  qp1 = _check_batch_compatibility(qps)
   nbatch = length(qps)
-  @assert nbatch > 0 "Need at least one model"
-  qp1 = first(qps)
   MT = _resolve_batch_matrix_type(qp1, T, MT)
   nvar = qp1.meta.nvar
-  ncon = qp1.meta.ncon
-  nnzj = qp1.meta.nnzj
   nnzh = qp1.meta.nnzh
-
-  for qp in qps[2:end]
-    @assert qp.meta.nvar == nvar "All models must have same nvar"
-    @assert qp.meta.ncon == ncon "All models must have same ncon"
-    @assert qp.meta.nnzj == nnzj "All models must have same nnzj"
-    @assert qp.meta.nnzh == nnzh "All models must have same nnzh"
-  end
 
   uniform = _uniform_batch_setup(qps, name, MT; nnzh = nnzh, islp = qp1.meta.islp, validate = validate, model_name = "BatchQuadraticModel")
 
@@ -42,7 +32,7 @@ function BatchQuadraticModel(
   hess_cols = Vector{Int}(hess_cols_vec)
 
   A_nzvals = uniform.A_nzvals
-  H_nzvals = _stack_data_columns(MT, qps, qp -> _structure_values(qp.data.Q))
+  H_nzvals = _stack_columns(MT, qps, qp -> _structure_values(qp.data.Q))
 
   off_diag = findall(hess_rows .!= hess_cols)
   sym_scatter_rows = vcat(Vector{Int}(hess_rows), Vector{Int}(hess_cols[off_diag]))

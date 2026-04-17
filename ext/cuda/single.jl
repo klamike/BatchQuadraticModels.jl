@@ -1,4 +1,4 @@
-function BatchQuadraticModels._copy_sparse_values!(A::CUSPARSE.CuSparseMatrixCSR, vals::CuVector)
+function BatchQuadraticModels._copy_sparse_values!(A::Union{CUSPARSE.CuSparseMatrixCSR, CUSPARSE.CuSparseMatrixCSC, CUSPARSE.CuSparseMatrixCOO}, vals::CuVector)
   @assert length(vals) == nnz(A)
   copyto!(vals, A.nzVal)
   return vals
@@ -26,7 +26,7 @@ function Adapt.adapt_structure(
     ucon = Adapt.adapt(to, data.ucon),
     lvar = Adapt.adapt(to, data.lvar),
     uvar = Adapt.adapt(to, data.uvar),
-    c0 = data.c0,
+    c0 = data.c0[],
   )
 end
 
@@ -44,11 +44,8 @@ function Adapt.adapt_structure(
     ucon = Adapt.adapt(to, data.ucon),
     lvar = Adapt.adapt(to, data.lvar),
     uvar = Adapt.adapt(to, data.uvar),
-    c0 = data.c0,
+    c0 = data.c0[],
     _v = Adapt.adapt(to, data._v),
-    regularize = data.regularize,
-    selected = data.selected,
-    σ = data.σ,
   )
 end
 

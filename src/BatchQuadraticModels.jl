@@ -27,13 +27,14 @@ end
 _structure_values(A::SparseMatrixCOO) = A.vals
 _structure_values(A::SparseMatrixCSC) = nonzeros(A)
 
-function _stack_columns(MT, cols)
-  nbatch = length(cols)
+function _stack_columns(MT, src, getter = identity)
+  nbatch = length(src)
   nbatch > 0 || throw(ArgumentError("Need at least one column"))
-  n = length(first(cols))
-  out = MT(undef, n, nbatch)
-  for (j, col) in enumerate(cols)
-    copyto!(view(out, :, j), col)
+  first_col = getter(first(src))
+  out = MT(undef, length(first_col), nbatch)
+  copyto!(view(out, :, 1), first_col)
+  for j in 2:nbatch
+    copyto!(view(out, :, j), getter(src[j]))
   end
   return out
 end
@@ -46,28 +47,13 @@ function _repeat_column(MT, col, nbatch)
   return out
 end
 
-function _stack_data_columns(MT, qps, getcol)
-  nbatch = length(qps)
-  nbatch > 0 || throw(ArgumentError("Need at least one model"))
-  first_col = getcol(first(qps))
-  out = MT(undef, length(first_col), nbatch)
-  copyto!(view(out, :, 1), first_col)
-  for j in 2:nbatch
-    copyto!(view(out, :, j), getcol(qps[j]))
-  end
-  return out
-end
-
-_batch_c0(::Type{T}, qps) where {T} = T[getfield(qp.data, :c0) for qp in qps]
-
 function _stack_batch_bounds(MT, qps)
-  metas = getfield.(qps, :meta)
   return (
-    _stack_columns(MT, getfield.(metas, :x0)),
-    _stack_columns(MT, getfield.(metas, :lvar)),
-    _stack_columns(MT, getfield.(metas, :uvar)),
-    _stack_columns(MT, getfield.(metas, :lcon)),
-    _stack_columns(MT, getfield.(metas, :ucon)),
+    _stack_columns(MT, qps, qp -> qp.meta.x0),
+    _stack_columns(MT, qps, qp -> qp.meta.lvar),
+    _stack_columns(MT, qps, qp -> qp.meta.uvar),
+    _stack_columns(MT, qps, qp -> qp.meta.lcon),
+    _stack_columns(MT, qps, qp -> qp.meta.ucon),
   )
 end
 
@@ -77,11 +63,12 @@ function _uniform_batch_setup(qps, name, MT; nnzh, islp, validate, model_name)
   validate && _validate_uniform_batch(qps, model_name)
   qp1 = first(qps)
   x0, lvar, uvar, lcon, ucon = _stack_batch_bounds(MT, qps)
-  meta = _batch_meta(eltype(qp1.data.c), MT, qp1.meta, nbatch; x0 = x0, lvar = lvar, uvar = uvar, lcon = lcon, ucon = ucon, nnzh = nnzh, islp = islp, name = name)
-  c_batch = _stack_data_columns(MT, qps, qp -> qp.data.c)
-  c0_batch = similar(c_batch, eltype(c_batch), nbatch)
-  copyto!(c0_batch, _batch_c0(eltype(c_batch), qps))
-  A_nzvals = _stack_data_columns(MT, qps, qp -> _structure_values(qp.data.A))
+  T = eltype(qp1.data.c)
+  meta = _batch_meta(T, MT, qp1.meta, nbatch; x0 = x0, lvar = lvar, uvar = uvar, lcon = lcon, ucon = ucon, nnzh = nnzh, islp = islp, name = name)
+  c_batch = _stack_columns(MT, qps, qp -> qp.data.c)
+  c0_batch = similar(c_batch, T, nbatch)
+  copyto!(c0_batch, T[qp.data.c0[] for qp in qps])
+  A_nzvals = _stack_columns(MT, qps, qp -> _structure_values(qp.data.A))
   A_rows, A_cols = _structure_arrays(qp1.data.A)
   jac_identity = collect(1:qp1.meta.nnzj)
   jac_rowptr, jac_colidx = _coo_to_csr(Vector{Int}(A_rows), qp1.meta.ncon)
@@ -105,25 +92,21 @@ function _objrhs_batch_setup(qps, name, MT; validate, model_name)
   @assert nbatch > 0 "Need at least one model"
   qp1 = first(qps)
   x0, lvar, uvar, lcon, ucon = _stack_batch_bounds(MT, qps)
-  c = _stack_data_columns(MT, qps, qp -> qp.data.c)
+  c = _stack_columns(MT, qps, qp -> qp.data.c)
   return (; qp1, nbatch, x0, lvar, uvar, lcon, ucon, c, name, MT)
 end
 
 function _adapt_qpdata(to, data)
-  c_adapted = Adapt.adapt(to, data.c)
   return QPData(
     Adapt.adapt(to, data.A),
-    c_adapted,
+    Adapt.adapt(to, data.c),
     Adapt.adapt(to, data.Q);
     lcon = Adapt.adapt(to, data.lcon),
     ucon = Adapt.adapt(to, data.ucon),
     lvar = Adapt.adapt(to, data.lvar),
     uvar = Adapt.adapt(to, data.uvar),
-    c0 = data.c0,
+    c0 = data.c0[],
     _v = Adapt.adapt(to, data._v),
-    regularize = data.regularize,
-    selected = data.selected,
-    σ = data.σ,
   )
 end
 
@@ -147,21 +130,14 @@ end
 
 function _adapt_batch_meta(to, meta::NLPModels.BatchNLPModelMeta{T}; nnzh = meta.nnzh, islp = meta.islp) where {T}
   x0 = Adapt.adapt(to, meta.x0)
-  MT = typeof(x0)
-  return NLPModels.BatchNLPModelMeta{T, MT}(
-    meta.nbatch,
-    meta.nvar;
+  return _batch_meta(T, typeof(x0), meta, meta.nbatch;
     x0 = x0,
     lvar = Adapt.adapt(to, meta.lvar),
     uvar = Adapt.adapt(to, meta.uvar),
-    ncon = meta.ncon,
     lcon = Adapt.adapt(to, meta.lcon),
     ucon = Adapt.adapt(to, meta.ucon),
-    nnzj = meta.nnzj,
     nnzh = nnzh,
-    minimize = meta.minimize,
     islp = islp,
-    name = meta.name,
   )
 end
 

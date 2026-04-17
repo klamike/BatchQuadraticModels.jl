@@ -40,7 +40,7 @@ function _batch_traits(qps::Vector{QP}) where {QP <: QuadraticModel}
   uniform = true
   islp = qp1.meta.nnzh == 0
   for qp in qps[2:end]
-    objrhs &= qp.data.c0 == qp1.data.c0 &&
+    objrhs &= qp.data.c0[] == qp1.data.c0[] &&
               _same_matrix_values(qp.data.Q, qp1.data.Q) &&
               _same_matrix_values(qp.data.A, qp1.data.A)
     uniform &= _same_matrix_structure(qp.data.Q, qp1.data.Q) &&
