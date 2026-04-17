@@ -1,5 +1,5 @@
 function _batch_spmv_impl!(
-  out::AbstractMatrix{T}, op::BatchSparseOp{<:CuVector}, B::AbstractMatrix{T},
+  out::AbstractMatrix{T}, op::DeviceBatchSparseOp, B::AbstractMatrix{T},
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
 ) where {T}
   nout = Int32(length(op.rowptr) - 1)
@@ -15,7 +15,7 @@ end
 
 function BatchQuadraticModels._batch_spmv_subset_impl!(
   out::AbstractMatrix{T},
-  op::BatchSparseOp{<:CuVector},
+  op::DeviceBatchSparseOp,
   B::AbstractMatrix{T},
   roots::AbstractVector{<:Integer},
   alpha::T,
@@ -64,7 +64,7 @@ function _launch_scalar_kernel!(
   threads = (tx, ty)
   blocks = (cld(Int(bs), Int(tx)), cld(Int(nout), Int(ty)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _scalar_spmv_kernel!(
-    out, op.nzVals, B, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -101,7 +101,7 @@ function _launch_scalar_subset_kernel!(
   threads = (tx, ty)
   blocks = (cld(Int(bs), Int(tx)), cld(Int(nout), Int(ty)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _scalar_spmv_subset_kernel!(
-    out, op.nzVals, B, roots, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, roots, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -151,7 +151,7 @@ function _launch_warp_kernel!(
   threads = (Int32(32), rows_per_block)
   blocks = (Int(bs), cld(Int(nout), Int(rows_per_block)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _warp_spmv_kernel!(
-    out, op.nzVals, B, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -202,18 +202,27 @@ function _launch_warp_subset_kernel!(
   threads = (Int32(32), rows_per_block)
   blocks = (Int(bs), cld(Int(nout), Int(rows_per_block)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _warp_spmv_subset_kernel!(
-    out, op.nzVals, B, roots, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, roots, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
 
-function Adapt.adapt_structure(::Type{<:CuArray}, op::BatchSparseOp)
-  BatchSparseOp(
-    Adapt.adapt(CuArray, op.nzVals),
-    Adapt.adapt(CuArray, op.rowptr),
-    Adapt.adapt(CuArray, op.flat_nz),
-    Adapt.adapt(CuArray, op.flat_val),
-    Adapt.adapt(CuArray, op.flat_packed),
-    op.mean_row_nnz,
+function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOp)
+  rowptr = Int32.(op.rowptr)
+  nz_idx = Int32.(op.nz_idx)
+  val_idx = Int32.(op.val_idx)
+  packed = Vector{Int64}(undef, length(nz_idx))
+  @inbounds for i in eachindex(packed)
+    packed[i] = _pack_nz_val(nz_idx[i], val_idx[i])
+  end
+  return DeviceBatchSparseOp(
+    Adapt.adapt(CuArray, op.nzvals),
+    Adapt.adapt(CuArray, rowptr),
+    Adapt.adapt(CuArray, packed),
+    _row_stats(rowptr),
   )
+end
+
+function BatchQuadraticModels._build_op(nzvals::CuMatrix, rowptr, nz_map, val_map, colidx)
+  return Adapt.adapt(CuArray, BatchQuadraticModels._build_host_op(nzvals, rowptr, nz_map, val_map, colidx))
 end

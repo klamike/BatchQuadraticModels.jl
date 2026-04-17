@@ -7,9 +7,9 @@ if CUDA.functional()
   @testset "ObjRHSBatchQuadraticModel sparse adaptation" begin
     qps = [ineqconqp_QP() for _ in 1:3]
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
-    gpu_bqp = convert(ObjRHSBatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
+    gpu_bqp = adapt(CuArray, cpu_bqp)
 
-    @test !(gpu_bqp.data.H isa CuMatrix)
+    @test !(gpu_bqp.data.Q isa CuMatrix)
     @test !(gpu_bqp.data.A isa CuMatrix)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
@@ -49,14 +49,14 @@ if CUDA.functional()
     Arows = qp.data.A.rows
     Acols = qp.data.A.cols
     Avals = qp.data.A.vals
-    Hrows = qp.data.H.rows
-    Hcols = qp.data.H.cols
-    Hvals = qp.data.H.vals
+    Qrows = qp.data.Q.rows
+    Qcols = qp.data.Q.cols
+    Qvals = qp.data.Q.vals
 
     models = [
       QuadraticModel(
         qp.data.c .+ shift,
-        copy(Hrows), copy(Hcols), Hvals .* scale;
+        copy(Qrows), copy(Qcols), Qvals .* scale;
         Arows = copy(Arows),
         Acols = copy(Acols),
         Avals = Avals .+ ashift,
@@ -70,7 +70,7 @@ if CUDA.functional()
     ]
 
     cpu_bqp = BatchQuadraticModel(models)
-    gpu_bqp = convert(BatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
+    gpu_bqp = adapt(CuArray, cpu_bqp)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
     ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]

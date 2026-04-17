@@ -6,7 +6,7 @@
   end
 end
 
-function fill_structure!(A::CUSPARSE.CuSparseMatrixCSR, rows, cols)
+function BatchQuadraticModels._copy_sparse_structure!(A::CUSPARSE.CuSparseMatrixCSR, rows::CuVector, cols::CuVector)
   @assert length(cols) == length(rows)
   if length(cols) > 0
     backend = CUDABackend()
@@ -24,21 +24,10 @@ function NLPModels.obj!(
 ) where {T, S, M1 <: CuSparseOperator, M2, MT}
   bs = length(bf)
   bf_mat = reshape(bf, 1, bs)
-  mul!(bqp._HX, bqp.data.H, bx)
+  mul!(bqp._HX, bqp.data.Q, bx)
   bqp._HX .*= T(0.5)
   bqp._HX .+= bqp.c_batch
   batch_mapreduce!(*, +, zero(T), bf_mat, bqp._HX, bx)
-  bf .+= bqp.data.c0
-  return bf
-end
-
-function NLPModels.obj!(
-  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
-  bx::AbstractMatrix{T}, bf::AbstractVector{T},
-) where {T, S, M1, M2, MT}
-  bs = length(bf)
-  bf_mat = reshape(bf, 1, bs)
-  batch_mapreduce!(*, +, zero(T), bf_mat, bqp.c_batch, bx)
   bf .+= bqp.data.c0
   return bf
 end
@@ -47,16 +36,8 @@ function NLPModels.grad!(
   bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2, MT},
   bx::AbstractMatrix{T}, bg::AbstractMatrix{T},
 ) where {T, S, M1 <: CuSparseOperator, M2, MT}
-  mul!(bg, bqp.data.H, bx)
+  mul!(bg, bqp.data.Q, bx)
   bg .+= bqp.c_batch
-  return bg
-end
-
-function NLPModels.grad!(
-  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
-  bx::AbstractMatrix{T}, bg::AbstractMatrix{T},
-) where {T, S, M1, M2, MT}
-  copyto!(bg, bqp.c_batch)
   return bg
 end
 
@@ -68,29 +49,12 @@ function NLPModels.cons!(
   return bc
 end
 
-function NLPModels.cons!(
-  bqp::ObjRHSBatchLinearModel{T, S, M1, M2, MT},
-  bx::AbstractMatrix{T}, bc::AbstractMatrix{T},
-) where {T, S, M1, M2 <: CuSparseOperator, MT}
-  mul!(bc, bqp.data.A, bx)
-  return bc
-end
-
 function NLPModels.jac_structure!(
   bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
   jrows::AbstractVector{<:Integer},
   jcols::AbstractVector{<:Integer},
 ) where {T, S, M1, M2 <: CuSparseOperator}
-  fill_structure!(operator_sparse_matrix(bqp.data.A), jrows, jcols)
-  return jrows, jcols
-end
-
-function NLPModels.jac_structure!(
-  bqp::ObjRHSBatchLinearModel{T, S, M1, M2},
-  jrows::AbstractVector{<:Integer},
-  jcols::AbstractVector{<:Integer},
-) where {T, S, M1, M2 <: CuSparseOperator}
-  fill_structure!(operator_sparse_matrix(bqp.data.A), jrows, jcols)
+  BatchQuadraticModels._copy_sparse_structure!(operator_sparse_matrix(bqp.data.A), jrows, jcols)
   return jrows, jcols
 end
 
@@ -99,21 +63,12 @@ function NLPModels.hess_structure!(
   hrows::AbstractVector{<:Integer},
   hcols::AbstractVector{<:Integer},
 ) where {T, S, M1 <: CuSparseOperator, M2}
-  fill_structure!(operator_sparse_matrix(bqp.data.H), hrows, hcols)
+  BatchQuadraticModels._copy_sparse_structure!(operator_sparse_matrix(bqp.data.Q), hrows, hcols)
   return hrows, hcols
 end
 
 function NLPModels.jac_coord!(
   bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2},
-  bx::AbstractMatrix,
-  bjvals::AbstractMatrix,
-) where {T, S, M1, M2 <: CuSparseOperator}
-  bjvals .= operator_sparse_matrix(bqp.data.A).nzVal
-  return bjvals
-end
-
-function NLPModels.jac_coord!(
-  bqp::ObjRHSBatchLinearModel{T, S, M1, M2},
   bx::AbstractMatrix,
   bjvals::AbstractMatrix,
 ) where {T, S, M1, M2 <: CuSparseOperator}
@@ -128,7 +83,7 @@ function NLPModels.hess_coord!(
   bobj_weight::AbstractVector,
   bhvals::AbstractMatrix,
 ) where {T, S, M1 <: CuSparseOperator, M2}
-  H = operator_sparse_matrix(bqp.data.H)
+  H = operator_sparse_matrix(bqp.data.Q)
   nnzh = nnz(H)
   nnzh == 0 && return bhvals
   mul!(bhvals, H.nzVal, bobj_weight')
@@ -140,136 +95,46 @@ function NLPModels.hprod!(
   bx::AbstractMatrix{T}, by::AbstractMatrix{T}, bv::AbstractMatrix{T},
   bobj_weight::AbstractVector{T}, bHv::AbstractMatrix{T},
 ) where {T, S, M1 <: CuSparseOperator, M2, MT}
-  mul!(bHv, bqp.data.H, bv)
+  mul!(bHv, bqp.data.Q, bv)
   bHv .*= bobj_weight'
   return bHv
 end
 
-function Base.convert(::Type{ObjRHSBatchQuadraticModel{T, S}}, bnlp::ObjRHSBatchQuadraticModel{T}) where {T, S<:CuArray}
+function Adapt.adapt_structure(::Type{<:CuArray}, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
   nbatch = bnlp.meta.nbatch
   nvar = bnlp.meta.nvar
-  ncon = bnlp.meta.ncon
 
-  adapted = BatchQuadraticModels._adapt_to_operator(CuArray, bnlp)
-  @assert adapted !== nothing
-  data_gpu, c_batch_gpu, HX_gpu, AX_gpu = adapted
-
-  MT = typeof(c_batch_gpu)
-  meta_gpu = NLPModels.BatchNLPModelMeta{T, MT}(
-    nbatch, nvar;
-    x0 = CuMatrix{T}(bnlp.meta.x0),
-    lvar = CuMatrix{T}(bnlp.meta.lvar),
-    uvar = CuMatrix{T}(bnlp.meta.uvar),
-    ncon = ncon,
-    lcon = CuMatrix{T}(bnlp.meta.lcon),
-    ucon = CuMatrix{T}(bnlp.meta.ucon),
-    nnzj = bnlp.meta.nnzj,
-    nnzh = bnlp.meta.nnzh,
-    minimize = bnlp.meta.minimize,
-    islp = bnlp.meta.islp,
-    name = bnlp.meta.name,
-  )
-
-  return ObjRHSBatchQuadraticModel{T, typeof(data_gpu.c), typeof(data_gpu.H), typeof(data_gpu.A), MT}(
-    meta_gpu, data_gpu, c_batch_gpu, HX_gpu, AX_gpu,
-  )
-end
-
-function Base.convert(::Type{ObjRHSBatchLinearModel{T, S}}, bnlp::ObjRHSBatchLinearModel{T}) where {T, S<:CuArray}
-  nbatch = bnlp.meta.nbatch
-  nvar = bnlp.meta.nvar
-  ncon = bnlp.meta.ncon
-
-  adapted = BatchQuadraticModels._adapt_to_operator(CuArray, bnlp)
-  @assert adapted !== nothing
-  data_gpu, c_batch_gpu = adapted
-
-  MT = typeof(c_batch_gpu)
-  meta_gpu = NLPModels.BatchNLPModelMeta{T, MT}(
-    nbatch, nvar;
-    x0 = CuMatrix{T}(bnlp.meta.x0),
-    lvar = CuMatrix{T}(bnlp.meta.lvar),
-    uvar = CuMatrix{T}(bnlp.meta.uvar),
-    ncon = ncon,
-    lcon = CuMatrix{T}(bnlp.meta.lcon),
-    ucon = CuMatrix{T}(bnlp.meta.ucon),
-    nnzj = bnlp.meta.nnzj,
-    nnzh = 0,
-    minimize = bnlp.meta.minimize,
-    islp = true,
-    name = bnlp.meta.name,
-  )
-
-  return ObjRHSBatchLinearModel{T, typeof(data_gpu.c), typeof(data_gpu.H), typeof(data_gpu.A), MT}(
-    meta_gpu, data_gpu, c_batch_gpu,
-  )
-end
-
-function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchQuadraticModel{T}) where {T}
-  if !(to isa Type{<:CuArray} || to isa CUDABackend)
-    return nothing
-  end
-
-  nbatch = bnlp.meta.nbatch
-  nvar = bnlp.meta.nvar
-  ncon = bnlp.meta.ncon
-
-  H_raw = operator_sparse_matrix(bnlp.data.H)
+  H_raw = operator_sparse_matrix(bnlp.data.Q)
   A_raw = operator_sparse_matrix(bnlp.data.A)
   H_orig_csr = _to_cu_csr(H_raw)
   H_full_csr = _to_cu_csr(_expand_symmetric_matrix(H_raw))
   A_csr = _to_cu_csr(A_raw)
 
-  H_op = sparse_operator(H_full_csr; symmetric = false, spmm_ncols = nbatch)
-  H_op.A = H_orig_csr
+  H_op = _cu_sparse_operator(H_orig_csr, H_full_csr; spmm_ncols = nbatch, premake_spmv = ('N',), premake_spmm = ('N',))
   A_op = sparse_operator(A_csr; symmetric = false, spmm_ncols = nbatch)
 
   c_gpu = Adapt.adapt(to, bnlp.data.c)
-  v_gpu = Adapt.adapt(to, bnlp.data.v)
+  v_gpu = Adapt.adapt(to, bnlp.data._v)
   data_gpu = QPData(
-    bnlp.data.c0,
-    c_gpu,
-    v_gpu,
-    H_op,
     A_op,
-    bnlp.data.regularize,
-    bnlp.data.selected,
-    bnlp.data.σ,
+    c_gpu,
+    H_op;
+    lcon = Adapt.adapt(to, bnlp.data.lcon),
+    ucon = Adapt.adapt(to, bnlp.data.ucon),
+    lvar = Adapt.adapt(to, bnlp.data.lvar),
+    uvar = Adapt.adapt(to, bnlp.data.uvar),
+    c0 = bnlp.data.c0,
+    _v = v_gpu,
+    regularize = bnlp.data.regularize,
+    selected = bnlp.data.selected,
+    σ = bnlp.data.σ,
   )
 
   c_batch_gpu = Adapt.adapt(to, bnlp.c_batch)
   HX_gpu = similar(c_batch_gpu, T, nvar, nbatch)
-  AX_gpu = similar(c_batch_gpu, T, ncon, nbatch)
+  CX_gpu = similar(c_batch_gpu, T, nvar, nbatch)
   fill!(HX_gpu, zero(T))
-  fill!(AX_gpu, zero(T))
+  fill!(CX_gpu, zero(T))
 
-  return data_gpu, c_batch_gpu, HX_gpu, AX_gpu
-end
-
-function BatchQuadraticModels._adapt_to_operator(to, bnlp::ObjRHSBatchLinearModel{T}) where {T}
-  if !(to isa Type{<:CuArray} || to isa CUDABackend)
-    return nothing
-  end
-
-  nbatch = bnlp.meta.nbatch
-
-  A_csr = _to_cu_csr(operator_sparse_matrix(bnlp.data.A))
-  A_op = sparse_operator(A_csr; symmetric = false, spmm_ncols = nbatch)
-
-  c_gpu = Adapt.adapt(to, bnlp.data.c)
-  v_gpu = Adapt.adapt(to, bnlp.data.v)
-  H_gpu = Adapt.adapt(to, bnlp.data.H)
-  data_gpu = QPData(
-    bnlp.data.c0,
-    c_gpu,
-    v_gpu,
-    H_gpu,
-    A_op,
-    bnlp.data.regularize,
-    bnlp.data.selected,
-    bnlp.data.σ,
-  )
-
-  c_batch_gpu = Adapt.adapt(to, bnlp.c_batch)
-  return data_gpu, c_batch_gpu
+  return data_gpu, c_batch_gpu, HX_gpu, CX_gpu
 end
