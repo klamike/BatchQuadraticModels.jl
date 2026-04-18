@@ -237,77 +237,57 @@ function _validate_uniform_bound_kinds!(bqp::ObjRHSBatchQuadraticModel)
   return bqp
 end
 
-# Build the std form for a batch. Uses instance 1 for the structural layout,
-# then fills per-instance values into column-shaped scratch.
+# Build the std form for a batch by delegating the structural build to the
+# scalar `standard_form` on a single-instance representative (column 1) that
+# shares `bqp.data.A` / `bqp.data.Q`. This means the GPU build path uses GPU
+# sparse machinery — no host pulls of A or Q.
 function standard_form(bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2, MT}) where {T, S, M1, M2, MT}
   _validate_uniform_bound_kinds!(bqp)
   nbatch = bqp.meta.nbatch
 
-  # Build layout from column 1 (representative instance).
+  # Build a single-instance representative sharing GPU/CPU data.A / data.Q.
   ref_qp = _extract_batch_instance(bqp, 1)
-  layout = _build_standard_layout(ref_qp)
-  A_rows, A_cols = _source_structure(bqp.data.A)
-  has_q = hasproperty(bqp.data, :Q) && bqp.data.Q !== nothing
-
-  if has_q
-    Q_rows, Q_cols = _source_structure(bqp.data.Q)
-    std_data = _build_standard_quadratic_data(layout, A_rows, A_cols, Q_rows, Q_cols)
-  else
-    std_data = _build_standard_linear_data(layout, A_rows, A_cols)
-  end
-  isempty(std_data.c) && throw(ArgumentError(
+  std_single, ws_single = standard_form(ref_qp)
+  isempty(std_single.data.c) && throw(ArgumentError(
     "Standard-form reformulation eliminated all decision variables; trivial all-fixed models are not supported.",
   ))
 
-  # Wrap the scalar LP/QP std data as a single QuadraticModel, then reuse the
-  # scalar workspace builder to get the shared scatter maps.
-  std_single = has_q ?
-    QuadraticModel(std_data; x0 = layout.x0, y0 = layout.y0, minimize = bqp.meta.minimize, name = bqp.meta.name) :
-    LinearModel(std_data; x0 = layout.x0, y0 = layout.y0, minimize = bqp.meta.minimize, name = bqp.meta.name)
-  ws_single = has_q ?
-    _build_quadratic_workspace(ref_qp, std_single.data, layout) :
-    _build_linear_workspace(ref_qp, std_single.data.A, layout)
-
-  # Promote the shared scatter maps / kind arrays into a batched workspace and
-  # wrap std_data.A/Q in an `ObjRHSBatchQuadraticModel` for the std batch.
   std_batch = _wrap_std_as_batch(std_single, nbatch, MT)
-  ws_batch = _build_batch_workspace(bqp, ws_single, layout, nbatch, MT)
+  ws_batch = _build_batch_workspace(bqp, ws_single, nbatch, MT)
   update_standard_form!(bqp, std_batch, ws_batch)
   return std_batch, ws_batch
 end
 
-# Materialize a single-instance QuadraticModel view from batch column `j`.
+# Single-instance representative: a scalar LP/QP that shares the (CPU or GPU)
+# data.A and data.Q with the batch. Column `j`'s c/bounds/x0/y0 are copied into
+# vectors of the same backend type as `bqp.c_batch` so the resulting model
+# dispatches to the matching scalar `standard_form` (CPU or GPU).
 function _extract_batch_instance(bqp::ObjRHSBatchQuadraticModel{T}, j::Int) where {T}
   data = bqp.data
   has_q = hasproperty(data, :Q) && data.Q !== nothing
-  c_col = Array(@view bqp.c_batch[:, j])
-  lvar = Array(@view bqp.meta.lvar[:, j])
-  uvar = Array(@view bqp.meta.uvar[:, j])
-  lcon = Array(@view bqp.meta.lcon[:, j])
-  ucon = Array(@view bqp.meta.ucon[:, j])
-  x0 = Array(@view bqp.meta.x0[:, j])
-  y0 = Array(@view bqp.meta.y0[:, j])
-  # Rebuild scalar A/Q as CPU SparseMatrixCSC so `_source_structure` and
-  # `_csc_nz_index` work directly against the shared operator.
-  A = _sparse_matrix_from(data.A)
+  # `bqp.c_batch[:, j]` is a copy (not a view) and matches `bqp.c_batch`'s
+  # underlying array type — `Vector{T}` on CPU, `CuVector{T}` on GPU, etc.
+  c_col = bqp.c_batch[:, j]
+  lvar  = bqp.meta.lvar[:, j]
+  uvar  = bqp.meta.uvar[:, j]
+  lcon  = bqp.meta.lcon[:, j]
+  ucon  = bqp.meta.ucon[:, j]
+  x0    = bqp.meta.x0[:, j]
+  y0    = bqp.meta.y0[:, j]
   if has_q
-    Q = _sparse_matrix_from(data.Q)
-    qp = QuadraticModel(
-      QPData(A, c_col, Q; lcon = lcon, ucon = ucon, lvar = lvar, uvar = uvar, c0 = data.c0[]);
+    return QuadraticModel(
+      QPData(data.A, c_col, data.Q;
+        lcon = lcon, ucon = ucon, lvar = lvar, uvar = uvar, c0 = data.c0[]);
       x0 = x0, y0 = y0, minimize = bqp.meta.minimize, name = string(bqp.meta.name, "_col", j),
     )
-    return qp
   else
     return LinearModel(
-      LPData(A, c_col; lcon = lcon, ucon = ucon, lvar = lvar, uvar = uvar, c0 = data.c0[]);
+      LPData(data.A, c_col;
+        lcon = lcon, ucon = ucon, lvar = lvar, uvar = uvar, c0 = data.c0[]);
       x0 = x0, y0 = y0, minimize = bqp.meta.minimize, name = string(bqp.meta.name, "_col", j),
     )
   end
 end
-
-_sparse_matrix_from(A::SparseMatrixCSC) = A
-_sparse_matrix_from(A::SparseMatrixCOO) = SparseMatrixCSC(A)
-_sparse_matrix_from(A) = _sparse_matrix_from(operator_sparse_matrix(A))
 
 # Wrap a scalar std LP/QP (with sparse CSC matrices) as an
 # `ObjRHSBatchQuadraticModel` with per-instance columns for c/bounds/x0/y0.
@@ -331,8 +311,16 @@ function _wrap_std_as_batch(std_single::Union{LinearModel{T}, QuadraticModel{T}}
     # Promote LPData to a QPData with zero Q so ObjRHSBatchQuadraticModel can
     # accept it; ObjRHSBatchLinearModel === ObjRHSBatchQuadraticModel alias.
     QuadraticModel(QPData(data.A, data.c, _zero_like(data.A); lcon = data.lcon, ucon = data.ucon, lvar = data.lvar, uvar = data.uvar, c0 = data.c0[]))
+  qp_for_batch = _adapt_to_batch_backend(qp_for_batch, MT, nbatch)
   return ObjRHSBatchQuadraticModel(qp_for_batch, nbatch; MT = MT, x0 = x0, lvar = lvar, uvar = uvar, lcon = lcon, ucon = ucon, c = c, name = std_single.meta.name)
 end
+
+# Convert a host-built scalar LP/QP into the matrix backend used by the batch
+# model. CPU is a no-op; the CUDA extension overrides for `MT <: CuMatrix` and
+# (re)builds the GPU sparse operators with `spmm_ncols = nbatch` so the batched
+# SpMV/SpMM has its CUSPARSE buffer pre-allocated.
+_adapt_to_batch_backend(qp, ::Type{<:Matrix}, nbatch) = qp
+_adapt_to_batch_backend(qp, ::Type, nbatch) = qp
 
 function _zero_like(A::SparseMatrixCSC{T}) where {T}
   return sparse(Int[], Int[], T[], size(A, 2), size(A, 2))
@@ -340,11 +328,10 @@ end
 
 # Build the batched workspace by inflating the scalar workspace's bound and
 # scratch vectors into columns.
-function _build_batch_workspace(bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2, MT}, ws_single::StandardFormWorkspace{T}, layout::StandardFormLayout{T}, nbatch::Int, ::Type{MT_in}) where {T, S, M1, M2, MT, MT_in}
+function _build_batch_workspace(bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2, MT}, ws_single::StandardFormWorkspace{T}, nbatch::Int, ::Type{MT_in}) where {T, S, M1, M2, MT, MT_in}
   n = NLPModels.get_nvar(bqp)
   m = NLPModels.get_ncon(bqp)
-  nstd = layout.nstd
-  nrows = layout.nrows
+  nrows = length(ws_single.rhs_base)
 
   # Fill batched bound metadata from the orig batch (columns of bqp.meta).
   var_start = BatchBoundMap{T, MT, typeof(ws_single.var_start.idx1), typeof(ws_single.var_start.kind)}(
@@ -467,7 +454,9 @@ function _batch_apply_lp_objective!(std::ObjRHSBatchQuadraticModel{T}, ws, src, 
     _batch_apply_scatter_map!(std.c_batch, ws.c_map, src.c_batch)
   end
   if d.c0 || d.c || d.var_bounds
-    # c0_std[j] = src.c0 + dot(src.c[:, j], x_offset[:, j])
+    # Per-instance c0 lives in `ws.c0_batch`; the std model's scalar c0 stays
+    # zero so the std-form objective never double-counts the offset.
+    std.data.c0[] = zero(T)
     _batch_coldot!(ws.c0_batch, src.c_batch, ws.x_offset)
     ws.c0_batch .+= src.data.c0[]
   end
@@ -488,7 +477,8 @@ function _batch_apply_qp_objective!(std::ObjRHSBatchQuadraticModel{T}, ws, src, 
     _batch_apply_scatter_map!(std.c_batch, ws.c_map, ws.ctmp)
   end
   if d.c0 || d.c || qx_dirty
-    # c0_std[j] = src.c0 + dot(src.c[:, j], x_offset[:, j]) + dot(qx[:, j], x_offset[:, j]) / 2
+    # Per-instance c0 lives in `ws.c0_batch`; std model's scalar c0 stays zero.
+    std.data.c0[] = zero(T)
     _batch_coldot!(ws.c0_batch, src.c_batch, ws.x_offset)
     tmp = similar(ws.c0_batch)
     _batch_coldot!(tmp, ws.qx, ws.x_offset)

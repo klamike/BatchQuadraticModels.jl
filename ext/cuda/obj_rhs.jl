@@ -103,3 +103,34 @@ function NLPModels.hprod!(
   return bHv
 end
 
+
+function Adapt.adapt_structure(
+    to,
+    bqp::ObjRHSBatchQuadraticModel{T, S, M1, M2, MT},
+) where {T, S <: Vector{T}, M1, M2, MT <: Matrix}
+    nbatch = bqp.meta.nbatch
+    A_inner_gpu = Adapt.adapt(to, operator_sparse_matrix(bqp.data.A))
+    Q_inner_gpu = Adapt.adapt(to, operator_sparse_matrix(bqp.data.Q))
+    A_op_gpu = sparse_operator(A_inner_gpu; spmm_ncols = nbatch)
+    Q_op_gpu = sparse_operator(Q_inner_gpu; symmetric = true, spmm_ncols = nbatch)
+    c_gpu = Adapt.adapt(to, bqp.data.c)
+    qp_for_template = QuadraticModel(QPData(
+        A_op_gpu, c_gpu, Q_op_gpu;
+        lcon = Adapt.adapt(to, bqp.data.lcon),
+        ucon = Adapt.adapt(to, bqp.data.ucon),
+        lvar = Adapt.adapt(to, bqp.data.lvar),
+        uvar = Adapt.adapt(to, bqp.data.uvar),
+        c0 = bqp.data.c0[], _v = Adapt.adapt(to, bqp.data._v),
+    ))
+    MT_gpu = typeof(Adapt.adapt(to, bqp.c_batch))
+    return ObjRHSBatchQuadraticModel(qp_for_template, nbatch;
+        MT   = MT_gpu,
+        x0   = Adapt.adapt(to, bqp.meta.x0),
+        lvar = Adapt.adapt(to, bqp.meta.lvar),
+        uvar = Adapt.adapt(to, bqp.meta.uvar),
+        lcon = Adapt.adapt(to, bqp.meta.lcon),
+        ucon = Adapt.adapt(to, bqp.meta.ucon),
+        c    = Adapt.adapt(to, bqp.c_batch),
+        name = bqp.meta.name,
+    )
+end
