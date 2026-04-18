@@ -223,6 +223,64 @@ function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOp)
   )
 end
 
+# Fallback: if any of the index inputs are still on host, build host op then
+# adapt. The native GPU path below handles the all-on-device case end-to-end.
 function BatchQuadraticModels._build_op(nzvals::CuMatrix, rowptr, nz_map, val_map, colidx)
   return Adapt.adapt(CuArray, BatchQuadraticModels._build_host_op(nzvals, rowptr, nz_map, val_map, colidx))
+end
+
+# Native GPU build path for DeviceBatchSparseOp — gather + Int32-cast + pack
+# entirely on device, no host roundtrip.
+function BatchQuadraticModels._build_op(
+  nzvals::CuMatrix, rowptr::CuVector, nz_map::CuVector, val_map::CuVector, colidx::CuVector,
+)
+  ncol = length(colidx)
+  rowptr32 = Int32.(rowptr)
+  packed = CUDA.zeros(Int64, ncol)
+  if ncol > 0
+    threads = 256
+    blocks = cld(ncol, threads)
+    CUDA.@cuda threads=threads blocks=blocks _gather_pack_kernel!(
+      packed, nz_map, val_map, colidx, Int32(ncol),
+    )
+  end
+  return DeviceBatchSparseOp(nzvals, rowptr32, packed, BatchQuadraticModels._row_stats(rowptr))
+end
+
+function _gather_pack_kernel!(packed, nz_map, val_map, colidx, ncol::Int32)
+  i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
+  i > ncol && return nothing
+  k = colidx[i]
+  nz = Int32(nz_map[k])
+  vl = Int32(val_map[k])
+  packed[i] = (Int64(nz) << 32) | Int64(vl)
+  return nothing
+end
+
+# Native GPU COO→CSR: sort COO row indices on device, derive rowptr by
+# atomic-count + prefix scan; the sort permutation is the row-grouping
+# `colidx` permutation expected by `_build_op`.
+function BatchQuadraticModels._coo_to_csr(indices::CuVector{Int}, n::Int)
+  nnz = length(indices)
+  rowptr = CUDA.zeros(Int, n + 1)
+  if nnz == 0
+    fill!(view(rowptr, 1:1), 1)
+    return rowptr, similar(indices, 0)
+  end
+  perm = CUDA.sortperm(indices)
+  sorted = indices[perm]
+  counts = CUDA.zeros(Int, n)
+  CUDA.@cuda threads=256 blocks=cld(nnz, 256) _coo_count_kernel!(counts, sorted, Int32(nnz))
+  cum = accumulate(+, counts)
+  copyto!(view(rowptr, 2:n+1), cum)
+  rowptr .+= 1
+  return rowptr, perm
+end
+
+function _coo_count_kernel!(counts, sorted, nnz::Int32)
+  i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
+  i > nnz && return nothing
+  r = sorted[i]
+  CUDA.@atomic counts[r] += 1
+  return nothing
 end
