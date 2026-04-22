@@ -3,7 +3,7 @@
 `BatchQuadraticModels.jl` provides lightweight LP/QP model types plus batched model wrappers.
 
 - `LPData`, `QPData`, `LinearModel`, `QuadraticModel` are the single-problem containers used by `MadIPM`.
-- `BatchQuadraticModel`, `BatchLinearModel`, `ObjRHSBatchQuadraticModel`, and `ObjRHSBatchLinearModel` cover common batched solve patterns.
+- `BatchQuadraticModel`, `BatchQuadraticModel`, `ObjRHSBatchQuadraticModel`, and `ObjRHSBatchQuadraticModel` cover common batched solve patterns.
 - The package also provides CUDA adaptation for the supported sparse/model types and an MOI extension that imports LPs/QPs into `QuadraticModel`.
 
 Typical usage:

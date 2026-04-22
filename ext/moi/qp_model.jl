@@ -1,3 +1,8 @@
+# MOI → `QuadraticModel` conversion. Variables become the orig x-space (with
+# bounds pulled via `MOI.Utilities.get_bounds`); constraints become rows of A
+# with per-side lcon/ucon derived from the MOI set (Interval/GreaterThan/
+# LessThan/EqualTo); the objective populates c/c0 and the Hessian Q.
+
 function _parse_variables(model)
   vars = MOI.get(model, MOI.ListOfVariableIndices())
   nvar = length(vars)
@@ -107,6 +112,13 @@ function _parse_objective(moimodel, index_map, nvar)
   return rows, cols, vals, vect, constant
 end
 
+"""
+    qp_model(moimodel::MOI.ModelLike) -> (QuadraticModel, MOI.Utilities.IndexMap)
+
+Build a [`QuadraticModel`](@ref) from a `MathOptInterface.ModelLike`. Returns
+the model together with an `IndexMap` mapping MOI variable/constraint indices
+to their positions in the assembled problem (`1:nvar`, `1:ncon`).
+"""
 function qp_model(moimodel::MOI.ModelLike)
   index_map, nvar, lvar, uvar, x0 = _parse_variables(moimodel)
   nvar == 0 && throw(ArgumentError("Trivial MOI models with no decision variables are not supported."))
