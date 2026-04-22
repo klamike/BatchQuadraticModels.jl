@@ -1,5 +1,5 @@
 function _batch_spmv_impl!(
-  out::AbstractMatrix{T}, op::DeviceBatchSparseOp, B::AbstractMatrix{T},
+  out::AbstractMatrix{T}, op::DeviceBatchSparseOperator, B::AbstractMatrix{T},
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
 ) where {T}
   nout = Int32(length(op.rowptr) - 1)
@@ -13,9 +13,9 @@ function _batch_spmv_impl!(
   return out
 end
 
-function BatchQuadraticModels._batch_spmv_subset_impl!(
+function _batch_spmv_subset_impl!(
   out::AbstractMatrix{T},
-  op::DeviceBatchSparseOp,
+  op::DeviceBatchSparseOperator,
   B::AbstractMatrix{T},
   roots::AbstractVector{<:Integer},
   alpha::T,
@@ -207,7 +207,7 @@ function _launch_warp_subset_kernel!(
   )
 end
 
-function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOp)
+function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOperator)
   rowptr = Int32.(op.rowptr)
   nz_idx = Int32.(op.nz_idx)
   val_idx = Int32.(op.val_idx)
@@ -215,24 +215,24 @@ function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOp)
   @inbounds for i in eachindex(packed)
     packed[i] = _pack_nz_val(nz_idx[i], val_idx[i])
   end
-  return DeviceBatchSparseOp(
+  return DeviceBatchSparseOperator(
     Adapt.adapt(CuArray, op.nzvals),
+    Adapt.adapt(CuArray, op.rows),
+    Adapt.adapt(CuArray, op.cols),
     Adapt.adapt(CuArray, rowptr),
     Adapt.adapt(CuArray, packed),
     _row_stats(rowptr),
   )
 end
 
-# Fallback: if any of the index inputs are still on host, build host op then
-# adapt. The native GPU path below handles the all-on-device case end-to-end.
-function BatchQuadraticModels._build_op(nzvals::CuMatrix, rowptr, nz_map, val_map, colidx)
-  return Adapt.adapt(CuArray, BatchQuadraticModels._build_host_op(nzvals, rowptr, nz_map, val_map, colidx))
+# Host-built index inputs → build host op then adapt; native GPU path below handles the all-on-device case.
+function _build_op(nzvals::CuMatrix, rows, cols, rowptr, nz_map, val_map, colidx)
+  return Adapt.adapt(CuArray, _build_host_op(nzvals, rows, cols, rowptr, nz_map, val_map, colidx))
 end
 
-# Native GPU build path for DeviceBatchSparseOp — gather + Int32-cast + pack
-# entirely on device, no host roundtrip.
-function BatchQuadraticModels._build_op(
-  nzvals::CuMatrix, rowptr::CuVector, nz_map::CuVector, val_map::CuVector, colidx::CuVector,
+function _build_op(
+  nzvals::CuMatrix, rows::CuVector, cols::CuVector,
+  rowptr::CuVector, nz_map::CuVector, val_map::CuVector, colidx::CuVector,
 )
   ncol = length(colidx)
   rowptr32 = Int32.(rowptr)
@@ -244,7 +244,15 @@ function BatchQuadraticModels._build_op(
       packed, nz_map, val_map, colidx, Int32(ncol),
     )
   end
-  return DeviceBatchSparseOp(nzvals, rowptr32, packed, BatchQuadraticModels._row_stats(rowptr))
+  return DeviceBatchSparseOperator(nzvals, rows, cols, rowptr32, packed, _row_stats(rowptr))
+end
+
+function _row_stats(rowptr::AnyCuArray)
+  n = length(rowptr) - 1
+  n == 0 && return 0.0
+  # `sum` over 1-element views avoids scalar getindex on the GPU.
+  nnz = Float64(sum(@view rowptr[end:end]) - sum(@view rowptr[1:1]))
+  return nnz / n
 end
 
 function _gather_pack_kernel!(packed, nz_map, val_map, colidx, ncol::Int32)
@@ -257,10 +265,7 @@ function _gather_pack_kernel!(packed, nz_map, val_map, colidx, ncol::Int32)
   return nothing
 end
 
-# Native GPU COO→CSR: sort COO row indices on device, derive rowptr by
-# atomic-count + prefix scan; the sort permutation is the row-grouping
-# `colidx` permutation expected by `_build_op`.
-function BatchQuadraticModels._coo_to_csr(indices::CuVector{Int}, n::Int)
+function _coo_to_csr(indices::CuVector{Int}, n::Int)
   nnz = length(indices)
   rowptr = CUDA.zeros(Int, n + 1)
   if nnz == 0

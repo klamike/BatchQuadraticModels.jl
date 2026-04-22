@@ -1,6 +1,4 @@
 mutable struct CuSparseOperator{T, S, O} <: AbstractSparseOperator{T}
-  m::Int
-  n::Int
   source::S
   op::O
   descA::CUSPARSE.CuSparseMatrixDescriptor
@@ -10,17 +8,12 @@ mutable struct CuSparseOperator{T, S, O} <: AbstractSparseOperator{T}
   spmm_buffer_T::Union{Nothing, CuVector{UInt8}}
 end
 
-Base.eltype(A::CuSparseOperator{T}) where {T} = T
-Base.size(A::CuSparseOperator) = (A.m, A.n)
+Base.size(A::CuSparseOperator) = size(A.source)
 SparseArrays.nnz(A::CuSparseOperator) = nnz(A.source)
 operator_sparse_matrix(A::CuSparseOperator) = A.source
 
-function _coo_to_cu_csr(A::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
-  return CUSPARSE.CuSparseMatrixCSR(sparse(A.rows, A.cols, A.vals, size(A)...))
-end
-
-_to_cu_csr(A::SparseMatrixCOO) = _coo_to_cu_csr(A)
 _to_cu_csr(A::SparseMatrixCSC) = CUSPARSE.CuSparseMatrixCSR(A)
+_to_cu_csr(A::SparseMatrixCOO) = CUSPARSE.CuSparseMatrixCSR(sparse(A.rows, A.cols, A.vals, size(A)...))
 
 function _expand_symmetric_matrix(H::SparseMatrixCOO{Tv, Ti}) where {Tv, Ti}
   rows, cols, vals = H.rows, H.cols, H.vals
@@ -82,7 +75,8 @@ function _spmv_buffer!(op::CuSparseOperator{T}, transa::Char) where {T <: BlasFl
   field = _mode_field(transa)
   buffer = getfield(op, field)
   if isnothing(buffer)
-    buffer = _spmv_buffer(op.descA, T, op.m, op.n, transa)
+    m, n = size(op)
+    buffer = _spmv_buffer(op.descA, T, m, n, transa)
     setfield!(op, field, buffer)
   end
   return buffer
@@ -95,7 +89,8 @@ function _spmm_buffer(op::CuSparseOperator, transa::Char)
 end
 
 function _mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}, transa::Char, α::T, β::T) where {T <: BlasFloat}
-  expected_y, expected_x = transa == 'N' ? (A.m, A.n) : (A.n, A.m)
+  m, n = size(A)
+  expected_y, expected_x = transa == 'N' ? (m, n) : (n, m)
   length(y) == expected_y || throw(DimensionMismatch("length(y) != $expected_y"))
   length(x) == expected_x || throw(DimensionMismatch("length(x) != $expected_x"))
   alpha = Ref{T}(α)
@@ -108,7 +103,8 @@ function _mul!(y::CuVector{T}, A::CuSparseOperator{T}, x::CuVector{T}, transa::C
 end
 
 function _mul!(Y::CuMatrix{T}, A::CuSparseOperator{T}, X::CuMatrix{T}, transa::Char, α::T, β::T) where {T <: BlasFloat}
-  expected_y, expected_x = transa == 'N' ? (A.m, A.n) : (A.n, A.m)
+  m, n = size(A)
+  expected_y, expected_x = transa == 'N' ? (m, n) : (n, m)
   size(Y, 1) == expected_y || throw(DimensionMismatch("size(Y,1) != $expected_y"))
   size(X, 1) == expected_x || throw(DimensionMismatch("size(X,1) != $expected_x"))
   alpha = Ref{T}(α)
@@ -129,7 +125,7 @@ function _cu_sparse_operator(source, op; spmm_ncols::Int = 0, premake_spmv = ('N
   buffer_T = 'T' in spmv_modes ? _spmv_buffer(descA, T, m, n, 'T') : nothing
   spmm_buffer_N = spmm_ncols > 0 && 'N' in spmm_modes ? _spmm_buffer(descA, T, m, n, 'N', spmm_ncols) : nothing
   spmm_buffer_T = spmm_ncols > 0 && 'T' in spmm_modes ? _spmm_buffer(descA, T, m, n, 'T', spmm_ncols) : nothing
-  return CuSparseOperator{T, typeof(source), typeof(op)}(m, n, source, op, descA, buffer_N, buffer_T, spmm_buffer_N, spmm_buffer_T)
+  return CuSparseOperator{T, typeof(source), typeof(op)}(source, op, descA, buffer_N, buffer_T, spmm_buffer_N, spmm_buffer_T)
 end
 
 const _CuSparseMatrix{T} = Union{CuSparseMatrixCSR{T}, CuSparseMatrixCSC{T}, CuSparseMatrixCOO{T}}
@@ -151,9 +147,5 @@ const _CuArrT{T} = Union{CuMatrix{T}, CuVector{T}}
 
 LinearAlgebra.mul!(y::_CuArrT{T}, A::CuSparseOperator{T}, x::_CuArrT{T}, α::Number, β::Number) where {T <: BlasFloat} =
   _mul!(y, A, x, 'N', T(α), T(β))
-LinearAlgebra.mul!(y::_CuArrT{T}, A::CuSparseOperator{T}, x::_CuArrT{T}) where {T <: BlasFloat} =
-  _mul!(y, A, x, 'N', one(T), zero(T))
 LinearAlgebra.mul!(y::_CuArrT{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::_CuArrT{T}, α::Number, β::Number) where {T <: BlasFloat} =
   _mul!(y, parent(At), x, 'T', T(α), T(β))
-LinearAlgebra.mul!(y::_CuArrT{T}, At::Transpose{T, <:CuSparseOperator{T}}, x::_CuArrT{T}) where {T <: BlasFloat} =
-  _mul!(y, parent(At), x, 'T', one(T), zero(T))
