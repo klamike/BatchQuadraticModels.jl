@@ -35,12 +35,12 @@
   models = [
     QuadraticModel(
       c_batches[i],
-      qp.data.Q.rows,
-      qp.data.Q.cols,
-      qp.data.Q.vals;
-      Arows = qp.data.A.rows,
-      Acols = qp.data.A.cols,
-      Avals = qp.data.A.vals,
+      qp.data.Q.source.rows,
+      qp.data.Q.source.cols,
+      qp.data.Q.source.vals;
+      Arows = qp.data.A.source.rows,
+      Acols = qp.data.A.source.cols,
+      Avals = qp.data.A.source.vals,
       lcon = lcon_batches[i],
       ucon = ucon_batches[i],
       lvar = lvar_batches[i],
@@ -73,8 +73,8 @@
   @test bqp.meta.nvar == nvar
   @test bqp.meta.ncon == ncon
   @test bqp.c_batch == bc
-  @test bqp.data.A isa BatchQuadraticModels.AbstractSparseOperator
-  @test bqp.data.Q isa BatchQuadraticModels.AbstractSparseOperator
+  @test bqp.A isa BatchQuadraticModels.AbstractSparseOperator
+  @test bqp.Q isa BatchQuadraticModels.AbstractSparseOperator
 
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]
@@ -150,7 +150,7 @@
   end
 end
 
-@testset "ObjRHSBatchLinearModel" begin
+@testset "ObjRHSBatchQuadraticModel" begin
   qp = QuadraticModel(
     [-1.0, 2.0],
     spzeros(2, 2);
@@ -172,7 +172,7 @@ end
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
 
-  bqp = ObjRHSBatchLinearModel(qps)
+  bqp = ObjRHSBatchQuadraticModel(qps)
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   bx = reduce(hcat, xs)
 
@@ -182,7 +182,7 @@ end
 
   @test bqp.meta.islp
   @test bqp.meta.nnzh == 0
-  @test bqp.data.A isa BatchQuadraticModels.AbstractSparseOperator
+  @test bqp.A isa BatchQuadraticModels.AbstractSparseOperator
   for i in 1:length(qps)
     @test bf[i] ≈ obj(qps[i], xs[i])
     @test bg[:, i] ≈ grad(qps[i], xs[i])
@@ -197,18 +197,18 @@ end
   lp1 = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A1, c0 = 0.0, bounds...)
   lp2 = QuadraticModel([3.0, 4.0], spzeros(2, 2); A = A2, c0 = 1.0, bounds...)
 
-  @test_throws AssertionError ObjRHSBatchLinearModel([lp1, lp2]; validate = true)
-  @test ObjRHSBatchLinearModel([lp1, lp2]; validate = false) isa ObjRHSBatchLinearModel
+  @test_throws AssertionError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = true)
+  @test ObjRHSBatchQuadraticModel([lp1, lp2]; validate = false) isa ObjRHSBatchQuadraticModel
 
   qp = ineqconqp_QP()
   qp_bad = QuadraticModel(
     qp.data.c,
-    qp.data.Q.rows,
-    qp.data.Q.cols,
-    qp.data.Q.vals .* 2.0;
-    Arows = qp.data.A.rows,
-    Acols = qp.data.A.cols,
-    Avals = qp.data.A.vals,
+    qp.data.Q.source.rows,
+    qp.data.Q.source.cols,
+    qp.data.Q.source.vals .* 2.0;
+    Arows = qp.data.A.source.rows,
+    Acols = qp.data.A.source.cols,
+    Avals = qp.data.A.source.vals,
     lcon = qp.meta.lcon,
     ucon = qp.meta.ucon,
     lvar = qp.meta.lvar,
@@ -224,19 +224,19 @@ end
   bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
   A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2)
   lp = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A, c0 = 0.0, minimize = false, bounds...)
-  blp = ObjRHSBatchLinearModel([lp, lp])
+  blp = ObjRHSBatchQuadraticModel([lp, lp])
   @test !blp.meta.minimize
   @test !Adapt.adapt(Array, blp).meta.minimize
 
   qp = ineqconqp_QP()
   qmax = QuadraticModel(
     qp.data.c,
-    qp.data.Q.rows,
-    qp.data.Q.cols,
-    qp.data.Q.vals;
-    Arows = qp.data.A.rows,
-    Acols = qp.data.A.cols,
-    Avals = qp.data.A.vals,
+    qp.data.Q.source.rows,
+    qp.data.Q.source.cols,
+    qp.data.Q.source.vals;
+    Arows = qp.data.A.source.rows,
+    Acols = qp.data.A.source.cols,
+    Avals = qp.data.A.source.vals,
     lcon = qp.meta.lcon,
     ucon = qp.meta.ucon,
     lvar = qp.meta.lvar,
@@ -274,5 +274,5 @@ end
   )
 
   @test_throws AssertionError ObjRHSBatchQuadraticModel(typeof(qp)[])
-  @test_throws AssertionError ObjRHSBatchLinearModel(typeof(lp)[])
+  @test_throws AssertionError ObjRHSBatchQuadraticModel(typeof(lp)[])
 end

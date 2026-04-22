@@ -6,12 +6,12 @@
   nnzh = qp.meta.nnzh
   nbatch = 3
 
-  Arows = qp.data.A.rows
-  Acols = qp.data.A.cols
-  Avals_base = qp.data.A.vals
-  Hrows = qp.data.Q.rows
-  Hcols = qp.data.Q.cols
-  Hvals_base = qp.data.Q.vals
+  Arows = qp.data.A.source.rows
+  Acols = qp.data.A.source.cols
+  Avals_base = qp.data.A.source.vals
+  Hrows = qp.data.Q.source.rows
+  Hcols = qp.data.Q.source.cols
+  Hvals_base = qp.data.Q.source.vals
 
   c_batches = [copy(qp.data.c), qp.data.c .* 2.0, qp.data.c .+ 0.5]
   c0_batches = [qp.data.c0[], 2.0, -1.0]
@@ -190,7 +190,7 @@
   end
 end
 
-@testset "BatchLinearModel" begin
+@testset "BatchQuadraticModel" begin
   qp = QuadraticModel(
     [1.0, -2.0],
     spzeros(2, 2);
@@ -217,7 +217,7 @@ end
     ))
   ]
 
-  bqp = BatchLinearModel(models)
+  bqp = BatchQuadraticModel(models)
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   bx = reduce(hcat, xs)
 
@@ -252,18 +252,18 @@ end
     bounds...,
   )
 
-  @test_throws AssertionError BatchLinearModel([lp1, lp2]; validate = true)
-  @test BatchLinearModel([lp1, lp2]; validate = false) isa BatchLinearModel
+  @test_throws AssertionError BatchQuadraticModel([lp1, lp2]; validate = true)
+  @test BatchQuadraticModel([lp1, lp2]; validate = false) isa BatchQuadraticModel
 
   qp1 = ineqconqp_QP()
   qp2 = QuadraticModel(
     qp1.data.c,
-    qp1.data.Q.rows,
-    qp1.data.Q.cols,
-    qp1.data.Q.vals;
+    qp1.data.Q.source.rows,
+    qp1.data.Q.source.cols,
+    qp1.data.Q.source.vals;
     Arows = [1, 2, 2, 3, 3, 1],
     Acols = [1, 1, 2, 1, 2, 2],
-    Avals = qp1.data.A.vals,
+    Avals = qp1.data.A.source.vals,
     lcon = qp1.meta.lcon,
     ucon = qp1.meta.ucon,
     lvar = qp1.meta.lvar,
@@ -287,7 +287,7 @@ end
       bounds...,
     ) for i in 0:1
   ]
-  blinear = BatchLinearModel(lp_models)
+  blinear = BatchQuadraticModel(lp_models)
   @test !blinear.meta.minimize
   @test !Adapt.adapt(Array, blinear).meta.minimize
 
@@ -295,12 +295,12 @@ end
   qp_models = [
     QuadraticModel(
       qp.data.c,
-      qp.data.Q.rows,
-      qp.data.Q.cols,
-      qp.data.Q.vals .* scale;
-      Arows = qp.data.A.rows,
-      Acols = qp.data.A.cols,
-      Avals = qp.data.A.vals .+ shift,
+      qp.data.Q.source.rows,
+      qp.data.Q.source.cols,
+      qp.data.Q.source.vals .* scale;
+      Arows = qp.data.A.source.rows,
+      Acols = qp.data.A.source.cols,
+      Avals = qp.data.A.source.vals .+ shift,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
       lvar = qp.meta.lvar,
@@ -325,5 +325,5 @@ end
   )
 
   @test_throws AssertionError BatchQuadraticModel(typeof(qp)[])
-  @test_throws AssertionError BatchLinearModel(typeof(lp)[])
+  @test_throws AssertionError BatchQuadraticModel(typeof(lp)[])
 end

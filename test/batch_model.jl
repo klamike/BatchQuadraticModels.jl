@@ -3,12 +3,12 @@
   qps_objrhs = [
     QuadraticModel(
       qp.data.c .+ shift,
-      qp.data.Q.rows,
-      qp.data.Q.cols,
-      qp.data.Q.vals;
-      Arows = qp.data.A.rows,
-      Acols = qp.data.A.cols,
-      Avals = qp.data.A.vals,
+      qp.data.Q.source.rows,
+      qp.data.Q.source.cols,
+      qp.data.Q.source.vals;
+      Arows = qp.data.A.source.rows,
+      Acols = qp.data.A.source.cols,
+      Avals = qp.data.A.source.vals,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
       c0 = qp.data.c0[],
@@ -20,12 +20,12 @@
   qps_uniform = [
     QuadraticModel(
       qp.data.c .+ shift,
-      qp.data.Q.rows,
-      qp.data.Q.cols,
-      qp.data.Q.vals .* hscale;
-      Arows = qp.data.A.rows,
-      Acols = qp.data.A.cols,
-      Avals = qp.data.A.vals .+ ashift,
+      qp.data.Q.source.rows,
+      qp.data.Q.source.cols,
+      qp.data.Q.source.vals .* hscale;
+      Arows = qp.data.A.source.rows,
+      Acols = qp.data.A.source.cols,
+      Avals = qp.data.A.source.vals .+ ashift,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
       c0 = qp.data.c0[] + c0shift,
@@ -54,7 +54,7 @@
       name = "lp_objrhs_$i",
     ) for (i, (shift, lshift, ushift)) in enumerate(((0.0, 0.0, 0.0), (0.2, -0.1, 0.1), (-0.3, 0.2, 0.0)))
   ]
-  @test batch_model(lps_objrhs) isa ObjRHSBatchLinearModel
+  @test batch_model(lps_objrhs) isa ObjRHSBatchQuadraticModel
 
   lps_uniform = [
     QuadraticModel(
@@ -71,5 +71,5 @@
       (-0.2, [0.7, -1.1, 1.8], -0.1),
     ))
   ]
-  @test batch_model(lps_uniform) isa BatchLinearModel
+  @test batch_model(lps_uniform) isa BatchQuadraticModel
 end

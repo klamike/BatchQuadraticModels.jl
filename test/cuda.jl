@@ -9,8 +9,8 @@ if CUDA.functional()
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
     gpu_bqp = adapt(CuArray, cpu_bqp)
 
-    @test !(gpu_bqp.data.Q isa CuMatrix)
-    @test !(gpu_bqp.data.A isa CuMatrix)
+    @test !(gpu_bqp.Q isa CuMatrix)
+    @test !(gpu_bqp.A isa CuMatrix)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
     ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]
@@ -36,22 +36,22 @@ if CUDA.functional()
     y0 = fill(2.0, size(bc, 1))
     y = CuArray(y0)
     expected = 3.0 .* cons(qps[1], xs[1]) .+ 4.0 .* y0
-    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
+    @test Array(mul!(y, gpu_bqp.A, x, 3.0, 4.0)) ≈ expected
 
     bad_x = CUDA.fill(1.0, size(x, 1) + 1)
-    @test_throws DimensionMismatch mul!(y, gpu_bqp.data.A, bad_x, 7.0, 8.0)
+    @test_throws DimensionMismatch mul!(y, gpu_bqp.A, bad_x, 7.0, 8.0)
     copyto!(y, y0)
-    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
+    @test Array(mul!(y, gpu_bqp.A, x, 3.0, 4.0)) ≈ expected
   end
 
   @testset "BatchQuadraticModel adaptation" begin
     qp = ineqconqp_QP()
-    Arows = qp.data.A.rows
-    Acols = qp.data.A.cols
-    Avals = qp.data.A.vals
-    Qrows = qp.data.Q.rows
-    Qcols = qp.data.Q.cols
-    Qvals = qp.data.Q.vals
+    Arows = qp.data.A.source.rows
+    Acols = qp.data.A.source.cols
+    Avals = qp.data.A.source.vals
+    Qrows = qp.data.Q.source.rows
+    Qcols = qp.data.Q.source.cols
+    Qvals = qp.data.Q.source.vals
 
     models = [
       QuadraticModel(
