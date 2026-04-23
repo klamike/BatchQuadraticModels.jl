@@ -29,8 +29,8 @@ end
 
 function batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
   nrows = size(first(srcs), 1)
-  nrows == 0 && return out
   fill!(out, neutral)
+  nrows == 0 && return out
   kernel = @cuda launch = false _batch_mapreduce_kernel(f, op, neutral, out, srcs)
   config = launch_configuration(kernel.fun)
   threads = max(1, (config.threads ÷ 32) * 32)

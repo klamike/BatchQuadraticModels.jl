@@ -312,6 +312,55 @@ end
 # (layout-only, no orig-data dependence — not GPU→CPU of model state).
 _device_c_map(layout::StandardFormLayout) = Adapt.adapt(CuArray, _build_c_map(layout))
 
+@kernel function _inverse_perm_kernel!(perm, marker)
+    i = @index(Global, Linear)
+    @inbounds if i <= length(marker)
+        perm[Int(marker[i])] = i
+    end
+end
+
+@kernel function _remap_dest_kernel!(dest, perm)
+    i = @index(Global, Linear)
+    @inbounds if i <= length(dest)
+        dest[i] = perm[dest[i]]
+    end
+end
+
+@kernel function _permute_base_kernel!(base_new, base_old, perm)
+    i = @index(Global, Linear)
+    @inbounds if i <= length(base_old)
+        base_new[perm[i]] = base_old[i]
+    end
+end
+
+# CUSPARSE SpMV on an unsorted `CuSparseMatrixCOO` silently produces wrong
+# results. The Jacobian/Hessian fill kernels emit entries in orig-k order,
+# not (row, col) order, so we convert to CSR downstream and carry the
+# COO→CSR permutation through the scatter map (which references nzVal
+# positions). `marker_csr.nzVal[csr_pos]` gives the original COO position
+# at CSR position `csr_pos`; inverting yields `perm[coo_pos] = csr_pos`.
+function _coo_to_csr_remap(coo::CUSPARSE.CuSparseMatrixCOO{T},
+                            base::CuVector{T}, dest::CuVector{Int}) where {T}
+    nnz_tot = length(base)
+    val_csr = CUSPARSE.CuSparseMatrixCSR(coo)
+    if nnz_tot == 0
+        return val_csr, base
+    end
+    backend = CUDABackend()
+    marker_coo = CUSPARSE.CuSparseMatrixCOO(
+        copy(coo.rowInd), copy(coo.colInd),
+        CuArray(T.(1:nnz_tot)), size(coo),
+    )
+    marker_csr = CUSPARSE.CuSparseMatrixCSR(marker_coo)
+    perm = CuVector{Int}(undef, nnz_tot)
+    _inverse_perm_kernel!(backend)(perm, marker_csr.nzVal; ndrange = nnz_tot)
+    length(dest) > 0 &&
+        _remap_dest_kernel!(backend)(dest, perm; ndrange = length(dest))
+    base_csr = CUDA.zeros(T, nnz_tot)
+    _permute_base_kernel!(backend)(base_csr, base, perm; ndrange = nnz_tot)
+    return val_csr, base_csr
+end
+
 function _build_device_jacobian(layout::StandardFormLayout{T}, rows::CuVector{Int}, cols::CuVector{Int}) where {T}
     backend = CUDABackend()
     counts = CuVector{Int}(undef, length(rows))
@@ -350,7 +399,9 @@ function _build_device_jacobian(layout::StandardFormLayout{T}, rows::CuVector{In
             ndrange = length(rows),
         )
     end
-    return CUSPARSE.CuSparseMatrixCOO(I, J, V, (layout.nrows, layout.nstd)), ScatterMap(base, dest, src, scale)
+    coo = CUSPARSE.CuSparseMatrixCOO(I, J, V, (layout.nrows, layout.nstd))
+    csr, base_csr = _coo_to_csr_remap(coo, base, dest)
+    return csr, ScatterMap(base_csr, dest, src, scale)
 end
 
 function _build_device_hessian(layout::StandardFormLayout{T}, rows::CuVector{Int}, cols::CuVector{Int}) where {T}
@@ -377,7 +428,10 @@ function _build_device_hessian(layout::StandardFormLayout{T}, rows::CuVector{Int
             ndrange = length(rows),
         )
     end
-    return CUSPARSE.CuSparseMatrixCOO(I, J, V, (layout.nstd, layout.nstd)), ScatterMap(CUDA.zeros(T, total_nnz), dest, src, scale)
+    coo = CUSPARSE.CuSparseMatrixCOO(I, J, V, (layout.nstd, layout.nstd))
+    base = CUDA.zeros(T, total_nnz)
+    csr, base_csr = _coo_to_csr_remap(coo, base, dest)
+    return csr, ScatterMap(base_csr, dest, src, scale)
 end
 
 function _device_workspace(orig, layout::StandardFormLayout{T}, A_map, Q_ref, Q_map) where {T}
