@@ -7,10 +7,10 @@ if CUDA.functional()
   @testset "ObjRHSBatchQuadraticModel sparse adaptation" begin
     qps = [ineqconqp_QP() for _ in 1:3]
     cpu_bqp = ObjRHSBatchQuadraticModel(qps)
-    gpu_bqp = convert(ObjRHSBatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
+    gpu_bqp = adapt(CuArray, cpu_bqp)
 
-    @test !(gpu_bqp.data.H isa CuMatrix)
-    @test !(gpu_bqp.data.A isa CuMatrix)
+    @test !(gpu_bqp.Q isa CuMatrix)
+    @test !(gpu_bqp.A isa CuMatrix)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
     ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]
@@ -36,27 +36,27 @@ if CUDA.functional()
     y0 = fill(2.0, size(bc, 1))
     y = CuArray(y0)
     expected = 3.0 .* cons(qps[1], xs[1]) .+ 4.0 .* y0
-    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
+    @test Array(mul!(y, gpu_bqp.A, x, 3.0, 4.0)) ≈ expected
 
     bad_x = CUDA.fill(1.0, size(x, 1) + 1)
-    @test_throws DimensionMismatch mul!(y, gpu_bqp.data.A, bad_x, 7.0, 8.0)
+    @test_throws DimensionMismatch mul!(y, gpu_bqp.A, bad_x, 7.0, 8.0)
     copyto!(y, y0)
-    @test Array(mul!(y, gpu_bqp.data.A, x, 3.0, 4.0)) ≈ expected
+    @test Array(mul!(y, gpu_bqp.A, x, 3.0, 4.0)) ≈ expected
   end
 
   @testset "BatchQuadraticModel adaptation" begin
     qp = ineqconqp_QP()
-    Arows = qp.data.A.rows
-    Acols = qp.data.A.cols
-    Avals = qp.data.A.vals
-    Hrows = qp.data.H.rows
-    Hcols = qp.data.H.cols
-    Hvals = qp.data.H.vals
+    Arows = qp.data.A.source.rows
+    Acols = qp.data.A.source.cols
+    Avals = qp.data.A.source.vals
+    Qrows = qp.data.Q.source.rows
+    Qcols = qp.data.Q.source.cols
+    Qvals = qp.data.Q.source.vals
 
     models = [
       QuadraticModel(
         qp.data.c .+ shift,
-        copy(Hrows), copy(Hcols), Hvals .* scale;
+        copy(Qrows), copy(Qcols), Qvals .* scale;
         Arows = copy(Arows),
         Acols = copy(Acols),
         Avals = Avals .+ ashift,
@@ -64,13 +64,13 @@ if CUDA.functional()
         ucon = qp.meta.ucon,
         lvar = qp.meta.lvar,
         uvar = qp.meta.uvar,
-        c0 = qp.data.c0 + c0shift,
+        c0 = qp.data.c0[] + c0shift,
       ) for (shift, scale, ashift, c0shift) in
         ((0.0, 1.0, 0.0, 0.0), (0.2, 2.0, 0.1, 1.0), (-0.1, 0.5, -0.1, -0.5))
     ]
 
     cpu_bqp = BatchQuadraticModel(models)
-    gpu_bqp = convert(BatchQuadraticModel{Float64, CuMatrix{Float64}}, cpu_bqp)
+    gpu_bqp = adapt(CuArray, cpu_bqp)
 
     xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
     ys = [[-1.0, -2.0, 0.5], [-0.5, -1.0, 0.0], [0.0, 0.5, 1.0]]

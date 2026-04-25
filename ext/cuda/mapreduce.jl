@@ -27,10 +27,10 @@ _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N
   return nothing
 end
 
-function BatchQuadraticModels.batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
+function batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
   nrows = size(first(srcs), 1)
-  nrows == 0 && return out
   fill!(out, neutral)
+  nrows == 0 && return out
   kernel = @cuda launch = false _batch_mapreduce_kernel(f, op, neutral, out, srcs)
   config = launch_configuration(kernel.fun)
   threads = max(1, (config.threads ÷ 32) * 32)
@@ -48,23 +48,12 @@ end
   @inbounds dst[j] = src[roots[j]]
 end
 
-function BatchQuadraticModels.gather_columns!(
-  dst::CuMatrix{T},
-  src::CuMatrix{T},
-  roots::AbstractVector{<:Integer},
-) where {T}
-  nactive = size(dst, 2)
-  backend = CUDABackend()
-  _gather_columns_kernel!(backend)(dst, src, roots; ndrange=(size(dst, 1), nactive))
+function gather_columns!(dst::CuMatrix{T}, src::CuMatrix{T}, roots::AbstractVector{<:Integer}) where {T}
+  _gather_columns_kernel!(CUDABackend())(dst, src, roots; ndrange = (size(dst, 1), size(dst, 2)))
   return dst
 end
 
-function BatchQuadraticModels.gather_entries!(
-  dst::CuVector{T},
-  src::CuVector{T},
-  roots::AbstractVector{<:Integer},
-) where {T}
-  backend = CUDABackend()
-  _gather_entries_kernel!(backend)(dst, src, roots; ndrange=length(dst))
+function gather_entries!(dst::CuVector{T}, src::CuVector{T}, roots::AbstractVector{<:Integer}) where {T}
+  _gather_entries_kernel!(CUDABackend())(dst, src, roots; ndrange = length(dst))
   return dst
 end

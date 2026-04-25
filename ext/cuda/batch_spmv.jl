@@ -1,5 +1,5 @@
 function _batch_spmv_impl!(
-  out::AbstractMatrix{T}, op::BatchSparseOp{<:CuVector}, B::AbstractMatrix{T},
+  out::AbstractMatrix{T}, op::DeviceBatchSparseOperator, B::AbstractMatrix{T},
   alpha::T, beta::T, val_offset::Int32 = Int32(0),
 ) where {T}
   nout = Int32(length(op.rowptr) - 1)
@@ -13,9 +13,9 @@ function _batch_spmv_impl!(
   return out
 end
 
-function BatchQuadraticModels._batch_spmv_subset_impl!(
+function _batch_spmv_subset_impl!(
   out::AbstractMatrix{T},
-  op::BatchSparseOp{<:CuVector},
+  op::DeviceBatchSparseOperator,
   B::AbstractMatrix{T},
   roots::AbstractVector{<:Integer},
   alpha::T,
@@ -64,7 +64,7 @@ function _launch_scalar_kernel!(
   threads = (tx, ty)
   blocks = (cld(Int(bs), Int(tx)), cld(Int(nout), Int(ty)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _scalar_spmv_kernel!(
-    out, op.nzVals, B, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -101,7 +101,7 @@ function _launch_scalar_subset_kernel!(
   threads = (tx, ty)
   blocks = (cld(Int(bs), Int(tx)), cld(Int(nout), Int(ty)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _scalar_spmv_subset_kernel!(
-    out, op.nzVals, B, roots, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, roots, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -151,7 +151,7 @@ function _launch_warp_kernel!(
   threads = (Int32(32), rows_per_block)
   blocks = (Int(bs), cld(Int(nout), Int(rows_per_block)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _warp_spmv_kernel!(
-    out, op.nzVals, B, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
@@ -202,18 +202,90 @@ function _launch_warp_subset_kernel!(
   threads = (Int32(32), rows_per_block)
   blocks = (Int(bs), cld(Int(nout), Int(rows_per_block)))
   CUDA.@cuda always_inline = true threads = threads blocks = blocks _warp_spmv_subset_kernel!(
-    out, op.nzVals, B, roots, op.flat_packed, op.rowptr,
+    out, op.nzvals, B, roots, op.packed, op.rowptr,
     alpha, beta, val_offset, nout, bs,
   )
 end
 
-function Adapt.adapt_structure(::Type{<:CuArray}, op::BatchSparseOp)
-  BatchSparseOp(
-    Adapt.adapt(CuArray, op.nzVals),
-    Adapt.adapt(CuArray, op.rowptr),
-    Adapt.adapt(CuArray, op.flat_nz),
-    Adapt.adapt(CuArray, op.flat_val),
-    Adapt.adapt(CuArray, op.flat_packed),
-    op.mean_row_nnz,
+function Adapt.adapt_structure(::Type{<:CuArray}, op::HostBatchSparseOperator)
+  rowptr = Int32.(op.rowptr)
+  nz_idx = Int32.(op.nz_idx)
+  val_idx = Int32.(op.val_idx)
+  packed = Vector{Int64}(undef, length(nz_idx))
+  @inbounds for i in eachindex(packed)
+    packed[i] = _pack_nz_val(nz_idx[i], val_idx[i])
+  end
+  return DeviceBatchSparseOperator(
+    Adapt.adapt(CuArray, op.nzvals),
+    Adapt.adapt(CuArray, op.rows),
+    Adapt.adapt(CuArray, op.cols),
+    Adapt.adapt(CuArray, rowptr),
+    Adapt.adapt(CuArray, packed),
+    _row_stats(rowptr),
   )
+end
+
+# Host-built index inputs → build host op then adapt; native GPU path below handles the all-on-device case.
+function _build_op(nzvals::CuMatrix, rows, cols, rowptr, nz_map, val_map, colidx)
+  return Adapt.adapt(CuArray, _build_host_op(nzvals, rows, cols, rowptr, nz_map, val_map, colidx))
+end
+
+function _build_op(
+  nzvals::CuMatrix, rows::CuVector, cols::CuVector,
+  rowptr::CuVector, nz_map::CuVector, val_map::CuVector, colidx::CuVector,
+)
+  ncol = length(colidx)
+  rowptr32 = Int32.(rowptr)
+  packed = CUDA.zeros(Int64, ncol)
+  if ncol > 0
+    threads = 256
+    blocks = cld(ncol, threads)
+    CUDA.@cuda threads=threads blocks=blocks _gather_pack_kernel!(
+      packed, nz_map, val_map, colidx, Int32(ncol),
+    )
+  end
+  return DeviceBatchSparseOperator(nzvals, rows, cols, rowptr32, packed, _row_stats(rowptr))
+end
+
+function _row_stats(rowptr::AnyCuArray)
+  n = length(rowptr) - 1
+  n == 0 && return 0.0
+  # `sum` over 1-element views avoids scalar getindex on the GPU.
+  nnz = Float64(sum(@view rowptr[end:end]) - sum(@view rowptr[1:1]))
+  return nnz / n
+end
+
+function _gather_pack_kernel!(packed, nz_map, val_map, colidx, ncol::Int32)
+  i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
+  i > ncol && return nothing
+  k = colidx[i]
+  nz = Int32(nz_map[k])
+  vl = Int32(val_map[k])
+  packed[i] = (Int64(nz) << 32) | Int64(vl)
+  return nothing
+end
+
+function _coo_to_csr(indices::CuVector{Int}, n::Int)
+  nnz = length(indices)
+  rowptr = CUDA.zeros(Int, n + 1)
+  if nnz == 0
+    fill!(view(rowptr, 1:1), 1)
+    return rowptr, similar(indices, 0)
+  end
+  perm = CUDA.sortperm(indices)
+  sorted = indices[perm]
+  counts = CUDA.zeros(Int, n)
+  CUDA.@cuda threads=256 blocks=cld(nnz, 256) _coo_count_kernel!(counts, sorted, Int32(nnz))
+  cum = accumulate(+, counts)
+  copyto!(view(rowptr, 2:n+1), cum)
+  rowptr .+= 1
+  return rowptr, perm
+end
+
+function _coo_count_kernel!(counts, sorted, nnz::Int32)
+  i = (blockIdx().x - Int32(1)) * blockDim().x + threadIdx().x
+  i > nnz && return nothing
+  r = sorted[i]
+  CUDA.@atomic counts[r] += 1
+  return nothing
 end
