@@ -159,7 +159,7 @@ constraint structure as [`LPData`](@ref). `Q` is wrapped as a symmetric
 [`sparse_operator`](@ref); `_v` is a reusable `Qx` scratch vector so `obj` and
 `grad!` don't allocate.
 """
-struct QPData{T, VT, MQ, MA}
+struct QPData{T, VT, W, MQ, MA}
   A::MA
   Q::MQ
   lcon::VT
@@ -168,9 +168,14 @@ struct QPData{T, VT, MQ, MA}
   uvar::VT
   c::VT
   c0::Base.RefValue{T}
-  _v::VT
+  _v::W
 end
 
+# `_v` is an internal `Qx` workspace — its type is intentionally decoupled
+# from the user-facing vectors (`VT`) so that callers passing `c/bounds` as
+# `SubArray` views don't need to conjure a matching-type workspace. The
+# default `similar(c)` still gives a plain `Vector{T}` for views; pass `_v`
+# explicitly if you want something more exotic.
 function QPData(
   A,
   c::VT,
@@ -180,12 +185,12 @@ function QPData(
   lvar::VT = _default_lvar(c),
   uvar::VT = _default_uvar(c),
   c0 = zero(eltype(c)),
-  _v::VT = similar(c),
+  _v = similar(c),
 ) where {VT}
   T = eltype(c)
   A_op = sparse_operator(A)
   Q_op = sparse_operator(Q; symmetric = true)
-  return QPData{T, VT, typeof(Q_op), typeof(A_op)}(A_op, Q_op, lcon, ucon, lvar, uvar, c, _as_ref(T, c0), _v)
+  return QPData{T, VT, typeof(_v), typeof(Q_op), typeof(A_op)}(A_op, Q_op, lcon, ucon, lvar, uvar, c, _as_ref(T, c0), _v)
 end
 
 """
@@ -194,8 +199,8 @@ end
 `NLPModels.AbstractNLPModel` wrapping a [`QPData`](@ref). Exposes the full
 NLPModels API including Hessian (`hess_structure!`/`hess_coord!`).
 """
-mutable struct QuadraticModel{T, VT, MQ, MA} <: NLPModels.AbstractNLPModel{T, VT}
-  data::QPData{T, VT, MQ, MA}
+mutable struct QuadraticModel{T, VT, W, MQ, MA} <: NLPModels.AbstractNLPModel{T, VT}
+  data::QPData{T, VT, W, MQ, MA}
   meta::NLPModels.NLPModelMeta{T, VT}
   counters::NLPModels.Counters
 end
