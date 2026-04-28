@@ -197,8 +197,8 @@ end
   lp1 = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A1, c0 = 0.0, bounds...)
   lp2 = QuadraticModel([3.0, 4.0], spzeros(2, 2); A = A2, c0 = 1.0, bounds...)
 
-  @test_throws AssertionError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = true)
-  @test ObjRHSBatchQuadraticModel([lp1, lp2]; validate = false) isa ObjRHSBatchQuadraticModel
+  @test_throws ArgumentError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = true)
+  @test_throws ArgumentError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = false)
 
   qp = ineqconqp_QP()
   qp_bad = QuadraticModel(
@@ -216,8 +216,8 @@ end
     c0 = qp.data.c0[],
   )
 
-  @test_throws AssertionError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = true)
-  @test ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = false) isa ObjRHSBatchQuadraticModel
+  @test_throws ArgumentError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = true)
+  @test_throws ArgumentError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = false)
 end
 
 @testset "ObjRHS adapt preserves objective sense" begin

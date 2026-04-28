@@ -252,8 +252,8 @@ end
     bounds...,
   )
 
-  @test_throws AssertionError BatchQuadraticModel([lp1, lp2]; validate = true)
-  @test BatchQuadraticModel([lp1, lp2]; validate = false) isa BatchQuadraticModel
+  @test_throws ArgumentError BatchQuadraticModel([lp1, lp2]; validate = true)
+  @test_throws ArgumentError BatchQuadraticModel([lp1, lp2]; validate = false)
 
   qp1 = ineqconqp_QP()
   qp2 = QuadraticModel(
@@ -271,8 +271,8 @@ end
     c0 = qp1.data.c0[],
   )
 
-  @test_throws AssertionError BatchQuadraticModel([qp1, qp2]; validate = true)
-  @test BatchQuadraticModel([qp1, qp2]; validate = false) isa BatchQuadraticModel
+  @test_throws ArgumentError BatchQuadraticModel([qp1, qp2]; validate = true)
+  @test_throws ArgumentError BatchQuadraticModel([qp1, qp2]; validate = false)
 end
 
 @testset "adapt preserves objective sense" begin

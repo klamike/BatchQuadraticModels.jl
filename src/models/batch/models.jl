@@ -92,10 +92,12 @@ function BatchQuadraticModel(qps::Vector{<:QuadraticModel{T}};
   shared_Q  = shared_Q  === nothing ? traits.objrhs : shared_Q
   shared_c  = shared_c  === nothing ? _all_equal(qps, qp -> qp.data.c)    : shared_c
   shared_c0 = shared_c0 === nothing ? _all_equal(qps, qp -> qp.data.c0[]) : shared_c0
-  if validate
-    @assert traits.uniform "BatchQuadraticModel requires identical sparse structure across the batch; pass validate=false to skip"
-    @assert !(shared_A && shared_Q) || traits.objrhs "BatchQuadraticModel with `shared_A=shared_Q=true` requires identical A/Q values across the batch; pass validate=false to skip"
-  end
+  traits.uniform || throw(ArgumentError(
+    "BatchQuadraticModel requires identical sparse structure across the batch."))
+  shared_A && !traits.same_A_values && throw(ArgumentError(
+    "BatchQuadraticModel with `shared_A=true` requires identical A values across the batch."))
+  shared_Q && !traits.same_Q_values && throw(ArgumentError(
+    "BatchQuadraticModel with `shared_Q=true` requires identical Q values across the batch."))
 
   x0, lvar, uvar, lcon, ucon = _stack_batch_bounds(MT, qps)
   c_batch  = shared_c ? copyto!(similar(MT(undef, 0, 0), T, qp1.meta.nvar), qp1.data.c) :

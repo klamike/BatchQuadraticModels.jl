@@ -47,7 +47,7 @@ function _parse_constraints(moimodel, index_map)
         index_map[cidx] = MOI.ConstraintIndex{F, S}(_index(fun))
         continue
       else
-        index_map[cidx] = MOI.ConstraintIndex{F, S}(nlin)
+        index_map[cidx] = MOI.ConstraintIndex{F, S}(nlin + 1)
       end
       set = MOI.get(moimodel, MOI.ConstraintSet(), cidx)
       if F <: SAF

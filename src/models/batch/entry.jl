@@ -53,20 +53,24 @@ end
 function _batch_traits(qps::Vector{<:QuadraticModel})
   @assert !isempty(qps) "Need at least one model"
   qp1     = first(qps)
-  objrhs  = true
-  uniform = true
+  same_A_values = true
+  same_Q_values = true
+  same_A_structure = true
+  same_Q_structure = true
   for qp in @view qps[2:end]
     @assert qp.meta.nvar == qp1.meta.nvar         "All models must have same nvar"
     @assert qp.meta.ncon == qp1.meta.ncon         "All models must have same ncon"
     @assert qp.meta.nnzj == qp1.meta.nnzj         "All models must have same nnzj"
     @assert qp.meta.nnzh == qp1.meta.nnzh         "All models must have same nnzh"
     @assert qp.meta.minimize == qp1.meta.minimize "All models must have the same objective sense"
-    objrhs  &= _same_matrix_values(qp.data.Q, qp1.data.Q) &&
-               _same_matrix_values(qp.data.A, qp1.data.A)
-    uniform &= _same_matrix_structure(qp.data.Q, qp1.data.Q) &&
-               _same_matrix_structure(qp.data.A, qp1.data.A)
+    same_A_values    &= _same_matrix_values(qp.data.A, qp1.data.A)
+    same_Q_values    &= _same_matrix_values(qp.data.Q, qp1.data.Q)
+    same_A_structure &= _same_matrix_structure(qp.data.A, qp1.data.A)
+    same_Q_structure &= _same_matrix_structure(qp.data.Q, qp1.data.Q)
   end
-  return (; objrhs, uniform)
+  objrhs = same_A_values && same_Q_values
+  uniform = same_A_structure && same_Q_structure
+  return (; same_A_values, same_Q_values, same_A_structure, same_Q_structure, objrhs, uniform)
 end
 
 """
