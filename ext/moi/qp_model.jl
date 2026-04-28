@@ -46,6 +46,9 @@ function _parse_constraints(moimodel, index_map)
       if F == VI
         index_map[cidx] = MOI.ConstraintIndex{F, S}(_index(fun))
         continue
+      elseif F <: VAF
+        throw(ArgumentError(
+          "Vector affine constraints are not supported by qp_model; bridge or scalarize the MOI model first."))
       else
         index_map[cidx] = MOI.ConstraintIndex{F, S}(nlin + 1)
       end

@@ -38,3 +38,18 @@ const MOI = MathOptInterface
   @test qp.data.Q.source[2, 1] ≈ 4.0
   @test qp.meta.ucon == [4.0]
 end
+
+@testset "MOI qp_model rejects vector affine constraints" begin
+  model = MOI.Utilities.Model{Float64}()
+  x = MOI.add_variable(model)
+  MOI.add_constraint(
+    model,
+    MOI.VectorAffineFunction(
+      [MOI.VectorAffineTerm(1, MOI.ScalarAffineTerm(1.0, x))],
+      [0.0],
+    ),
+    MOI.Nonnegatives(1),
+  )
+
+  @test_throws ArgumentError BatchQuadraticModels.qp_model(model)
+end

@@ -139,15 +139,16 @@ function BatchQuadraticModel(qp::QuadraticModel{T}, nbatch::Int;
                               shared_A::Bool = true,
                               shared_Q::Bool = true,
                               MT = typeof(similar(qp.data.c, T, 0, 0)),
-                              x0   = fill!(MT(undef, qp.meta.nvar, nbatch), zero(T)),
-                              lvar = fill!(MT(undef, qp.meta.nvar, nbatch), T(-Inf)),
-                              uvar = fill!(MT(undef, qp.meta.nvar, nbatch), T( Inf)),
-                              lcon = fill!(MT(undef, qp.meta.ncon, nbatch), T(-Inf)),
-                              ucon = fill!(MT(undef, qp.meta.ncon, nbatch), T( Inf)),
+                              x0   = _repeat_column(MT, qp.meta.x0, nbatch),
+                              y0   = _repeat_column(MT, qp.meta.y0, nbatch),
+                              lvar = _repeat_column(MT, qp.meta.lvar, nbatch),
+                              uvar = _repeat_column(MT, qp.meta.uvar, nbatch),
+                              lcon = _repeat_column(MT, qp.meta.lcon, nbatch),
+                              ucon = _repeat_column(MT, qp.meta.ucon, nbatch),
                               c    = _repeat_column(MT, qp.data.c, nbatch),
                               c0   = fill!(similar(qp.data.c, T, nbatch), qp.data.c0[]),
                               name::String = "BatchQP") where {T}
-  meta = _batch_meta(T, MT, qp.meta, nbatch; x0, lvar, uvar, lcon, ucon, name)
+  meta = _batch_meta(T, MT, qp.meta, nbatch; x0, y0, lvar, uvar, lcon, ucon, name)
   A = shared_A ? sparse_operator(qp.data.A) :
         _jacobian_op(qp, _repeat_column(MT, _sparse_values(qp.data.A), nbatch))
   Q = shared_Q ? sparse_operator(qp.data.Q; symmetric = true) :

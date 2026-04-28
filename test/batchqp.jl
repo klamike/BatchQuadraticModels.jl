@@ -327,3 +327,25 @@ end
   @test_throws AssertionError BatchQuadraticModel(typeof(qp)[])
   @test_throws AssertionError BatchQuadraticModel(typeof(lp)[])
 end
+
+@testset "scalar replication preserves metadata" begin
+  qp = QuadraticModel(
+    [1.0, -2.0],
+    spzeros(2, 2);
+    A = sparse([1, 2], [1, 2], [3.0, -4.0], 2, 2),
+    lcon = [0.0, -Inf],
+    ucon = [5.0, 7.0],
+    lvar = [-1.0, 2.0],
+    uvar = [4.0, Inf],
+    x0 = [0.5, 3.0],
+    y0 = [0.1, -0.2],
+  )
+  bqp = BatchQuadraticModel(qp, 3)
+
+  @test bqp.meta.x0 == repeat(qp.meta.x0, 1, 3)
+  @test bqp.meta.y0 == repeat(qp.meta.y0, 1, 3)
+  @test bqp.meta.lvar == repeat(qp.meta.lvar, 1, 3)
+  @test bqp.meta.uvar == repeat(qp.meta.uvar, 1, 3)
+  @test bqp.meta.lcon == repeat(qp.meta.lcon, 1, 3)
+  @test bqp.meta.ucon == repeat(qp.meta.ucon, 1, 3)
+end

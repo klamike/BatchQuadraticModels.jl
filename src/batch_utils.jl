@@ -50,10 +50,10 @@ end
 
 # Build a `BatchNLPModelMeta` carrying `nbatch` copies of each bound/iterate
 # vector; `ncon`/`nnzj`/`minimize` inherit from the source scalar `meta`.
-function _batch_meta(::Type{T}, ::Type{MT}, meta, nbatch; x0, lvar, uvar, lcon, ucon, nnzh = meta.nnzh, islp = meta.islp, name = meta.name) where {T, MT}
+function _batch_meta(::Type{T}, ::Type{MT}, meta, nbatch; x0, y0 = fill!(MT(undef, meta.ncon, nbatch), zero(T)), lvar, uvar, lcon, ucon, nnzh = meta.nnzh, islp = meta.islp, name = meta.name) where {T, MT}
   return NLPModels.BatchNLPModelMeta{T, MT}(nbatch, meta.nvar;
     x0, lvar, uvar,
-    ncon = meta.ncon, lcon, ucon,
+    ncon = meta.ncon, y0, lcon, ucon,
     nnzj = meta.nnzj, nnzh,
     minimize = meta.minimize, islp, name,
   )
