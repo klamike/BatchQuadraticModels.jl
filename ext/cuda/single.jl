@@ -52,7 +52,7 @@ function Adapt.adapt_structure(to, data::LPData{T, VT, <:SparseOperator}) where 
   )
 end
 
-function Adapt.adapt_structure(to, data::QPData{T, VT, <:SparseOperator, <:SparseOperator}) where {T, VT}
+function Adapt.adapt_structure(to, data::QPData{T, VT, W, <:SparseOperator, <:SparseOperator}) where {T, VT, W}
   return QPData(
     _adapt_data_op(to, data.A; symmetric = false),
     Adapt.adapt(to, data.c),
@@ -69,5 +69,5 @@ _adapt_meta_kwargs(to, meta) = (x0 = Adapt.adapt(to, meta.x0), y0 = Adapt.adapt(
 
 Adapt.adapt_structure(to, lp::LinearModel{T, VT, <:SparseOperator}) where {T, VT} =
   LinearModel(Adapt.adapt(to, lp.data); _adapt_meta_kwargs(to, lp.meta)...)
-Adapt.adapt_structure(to, qp::QuadraticModel{T, VT, <:SparseOperator, <:SparseOperator}) where {T, VT} =
+Adapt.adapt_structure(to, qp::QuadraticModel{T, VT, W, <:SparseOperator, <:SparseOperator}) where {T, VT, W} =
   QuadraticModel(Adapt.adapt(to, qp.data); _adapt_meta_kwargs(to, qp.meta)...)
