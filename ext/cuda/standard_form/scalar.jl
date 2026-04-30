@@ -462,7 +462,7 @@ end
 # LP and QP share the layout/jacobian/wrap/ws path; QP adds a Hessian build.
 function standard_form(orig::Union{
     LinearModel{T, <:CuVector{T}, <:AbstractSparseOperator{T}},
-    QuadraticModel{T, <:CuVector{T}, <:AbstractSparseOperator{T}, <:AbstractSparseOperator{T}},
+    QuadraticModel{T, <:CuVector{T}, <:CuVector{T}, <:AbstractSparseOperator{T}, <:AbstractSparseOperator{T}},
 }) where {T}
     layout = _build_standard_layout(orig)
     A_rows, A_cols = _sparse_structure(orig.data.A)
