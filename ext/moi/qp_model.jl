@@ -39,7 +39,8 @@ function _parse_constraints(moimodel, index_map)
 
   contypes = MOI.get(moimodel, MOI.ListOfConstraintTypesPresent())
   for (F, S) in contypes
-    @assert F <: AF || F <: VI
+    (F <: AF || F <: VI) || throw(ArgumentError(
+      "Constraint functions of type $F are not supported by qp_model; use variable bounds or scalar affine constraints."))
     conindices = MOI.get(moimodel, MOI.ListOfConstraintIndices{F, S}())
     for cidx in conindices
       fun = MOI.get(moimodel, MOI.ConstraintFunction(), cidx)

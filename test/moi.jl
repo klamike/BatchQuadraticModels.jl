@@ -61,3 +61,19 @@ end
 
   @test_throws ArgumentError BatchQuadraticModels.qp_model(model)
 end
+
+@testset "MOI qp_model rejects unsupported constraint functions" begin
+  model = MOI.Utilities.Model{Float64}()
+  x = MOI.add_variable(model)
+  MOI.add_constraint(
+    model,
+    MOI.ScalarQuadraticFunction(
+      [MOI.ScalarQuadraticTerm(1.0, x, x)],
+      MOI.ScalarAffineTerm{Float64}[],
+      0.0,
+    ),
+    MOI.LessThan(1.0),
+  )
+
+  @test_throws ArgumentError BatchQuadraticModels.qp_model(model)
+end
