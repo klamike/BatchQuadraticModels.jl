@@ -21,10 +21,11 @@ function _repeat_column(MT, col, nbatch)
   return out
 end
 
-# Stack the five `NLPModelMeta` bound/iterate fields into batch matrices.
+# Stack the six `NLPModelMeta` bound/iterate fields into batch matrices.
 function _stack_batch_bounds(MT, qps)
   return (
     _stack_columns(MT, qps, qp -> qp.meta.x0),
+    _stack_columns(MT, qps, qp -> qp.meta.y0),
     _stack_columns(MT, qps, qp -> qp.meta.lvar),
     _stack_columns(MT, qps, qp -> qp.meta.uvar),
     _stack_columns(MT, qps, qp -> qp.meta.lcon),
@@ -65,6 +66,7 @@ function _adapt_batch_meta(to, meta::NLPModels.BatchNLPModelMeta{T}) where {T}
   x0 = Adapt.adapt(to, meta.x0)
   return _batch_meta(T, typeof(x0), meta, meta.nbatch;
     x0,
+    y0 = Adapt.adapt(to, meta.y0),
     lvar = Adapt.adapt(to, meta.lvar),
     uvar = Adapt.adapt(to, meta.uvar),
     lcon = Adapt.adapt(to, meta.lcon),

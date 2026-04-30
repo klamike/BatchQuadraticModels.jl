@@ -349,3 +349,21 @@ end
   @test bqp.meta.lcon == repeat(qp.meta.lcon, 1, 3)
   @test bqp.meta.ucon == repeat(qp.meta.ucon, 1, 3)
 end
+
+@testset "vector construction and adapt preserve y0" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  qps = [
+    QuadraticModel(
+      [1.0, 2.0],
+      spzeros(2, 2);
+      A = spzeros(2, 2),
+      y0 = [1.0 + i, -2.0 - i],
+      bounds...,
+    ) for i in 1:2
+  ]
+  bqp = BatchQuadraticModel(qps)
+  expected = reduce(hcat, [qp.meta.y0 for qp in qps])
+
+  @test bqp.meta.y0 == expected
+  @test Adapt.adapt(Array, bqp).meta.y0 == expected
+end

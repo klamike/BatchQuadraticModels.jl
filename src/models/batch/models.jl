@@ -99,7 +99,7 @@ function BatchQuadraticModel(qps::Vector{<:QuadraticModel{T}};
   shared_Q && !traits.same_Q_values && throw(ArgumentError(
     "BatchQuadraticModel with `shared_Q=true` requires identical Q values across the batch."))
 
-  x0, lvar, uvar, lcon, ucon = _stack_batch_bounds(MT, qps)
+  x0, y0, lvar, uvar, lcon, ucon = _stack_batch_bounds(MT, qps)
   c_batch  = shared_c ? copyto!(similar(MT(undef, 0, 0), T, qp1.meta.nvar), qp1.data.c) :
                         _stack_columns(MT, qps, qp -> qp.data.c)
   c0_batch = shared_c0 ? qp1.data.c0[]                : _stack_c0(qps, T)
@@ -109,7 +109,7 @@ function BatchQuadraticModel(qps::Vector{<:QuadraticModel{T}};
   Q = shared_Q ? sparse_operator(qp1.data.Q; symmetric = true) :
         _hessian_op(qp1, _stack_columns(MT, qps, qp -> _sparse_values(qp.data.Q)))
 
-  meta = _batch_meta(T, MT, qp1.meta, nbatch; x0, lvar, uvar, lcon, ucon, name)
+  meta = _batch_meta(T, MT, qp1.meta, nbatch; x0, y0, lvar, uvar, lcon, ucon, name)
   _HX = MT(undef, qp1.meta.nvar, nbatch)
   _CX = MT(undef, qp1.meta.nvar, nbatch)
   return BatchQuadraticModel(meta, c_batch, c0_batch, A, Q, _HX, _CX)

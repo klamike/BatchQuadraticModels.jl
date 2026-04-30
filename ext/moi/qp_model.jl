@@ -44,6 +44,8 @@ function _parse_constraints(moimodel, index_map)
     for cidx in conindices
       fun = MOI.get(moimodel, MOI.ConstraintFunction(), cidx)
       if F == VI
+        S <: BoundSet || throw(ArgumentError(
+          "Variable constraints with set $S are not supported by qp_model; only continuous bounds are supported."))
         index_map[cidx] = MOI.ConstraintIndex{F, S}(_index(fun))
         continue
       elseif F <: VAF

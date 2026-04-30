@@ -53,3 +53,11 @@ end
 
   @test_throws ArgumentError BatchQuadraticModels.qp_model(model)
 end
+
+@testset "MOI qp_model rejects non-bound variable constraints" begin
+  model = MOI.Utilities.Model{Float64}()
+  x = MOI.add_variable(model)
+  MOI.add_constraint(model, x, MOI.ZeroOne())
+
+  @test_throws ArgumentError BatchQuadraticModels.qp_model(model)
+end
