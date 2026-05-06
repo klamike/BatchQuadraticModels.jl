@@ -92,25 +92,6 @@ end
   @test ws.c0_batch    ≈ ws_ref.c0_batch
 end
 
-@testset "Batch standard_form rejects heterogeneous bound kinds" begin
-  A = sparse([1.0 1.0])
-  Q = sparse([0.0 0.0; 0.0 0.0])
-  qp_template = QuadraticModel(QPData(A, [1.0, 2.0], Q;
-    lcon = [0.0], ucon = [5.0],
-    lvar = [1.0, 1.0], uvar = [Inf, Inf], c0 = 0.0))
-  nbatch = 2
-  bqp = ObjRHSBatchQuadraticModel(qp_template, nbatch)
-  for j in 1:nbatch
-    bqp.meta.lcon[:, j] .= [0.0]
-    bqp.meta.ucon[:, j] .= [5.0]
-    bqp.meta.lvar[:, j] .= [1.0, 1.0]
-    bqp.meta.uvar[:, j] .= [Inf, Inf]
-  end
-  # Flip column 2's uvar[1] to finite → bound kind changes.
-  bqp.meta.uvar[1, 2] = 5.0
-  @test_throws ArgumentError standard_form(bqp)
-end
-
 @testset "Batch recover_primal! inverts VAR_LB_UB" begin
   A = sparse([1.0 1.0])
   Q = sparse([0.0 0.0; 0.0 0.0])

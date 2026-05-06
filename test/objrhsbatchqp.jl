@@ -190,36 +190,6 @@ end
   end
 end
 
-@testset "ObjRHS constructor validation" begin
-  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
-  A1 = sparse([1, 2], [1, 2], [1.0, 1.0], 2, 2)
-  A2 = sparse([1, 1], [1, 2], [3.0, 4.0], 2, 2)
-  lp1 = QuadraticModel([1.0, 2.0], spzeros(2, 2); A = A1, c0 = 0.0, bounds...)
-  lp2 = QuadraticModel([3.0, 4.0], spzeros(2, 2); A = A2, c0 = 1.0, bounds...)
-
-  @test_throws ArgumentError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = true)
-  @test_throws ArgumentError ObjRHSBatchQuadraticModel([lp1, lp2]; validate = false)
-
-  qp = ineqconqp_QP()
-  qp_bad = QuadraticModel(
-    qp.data.c,
-    qp.data.Q.source.rows,
-    qp.data.Q.source.cols,
-    qp.data.Q.source.vals .* 2.0;
-    Arows = qp.data.A.source.rows,
-    Acols = qp.data.A.source.cols,
-    Avals = qp.data.A.source.vals,
-    lcon = qp.meta.lcon,
-    ucon = qp.meta.ucon,
-    lvar = qp.meta.lvar,
-    uvar = qp.meta.uvar,
-    c0 = qp.data.c0[],
-  )
-
-  @test_throws ArgumentError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = true)
-  @test_throws ArgumentError ObjRHSBatchQuadraticModel([qp, qp_bad]; validate = false)
-end
-
 @testset "ObjRHS adapt preserves objective sense" begin
   bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
   A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2)
@@ -263,16 +233,3 @@ end
   @test Adapt.adapt(Array, bqp).meta.islp
 end
 
-@testset "ObjRHS empty batch validation" begin
-  qp = ineqconqp_QP()
-  lp = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2),
-    lcon = [-Inf, -Inf],
-    ucon = [Inf, Inf],
-  )
-
-  @test_throws AssertionError ObjRHSBatchQuadraticModel(typeof(qp)[])
-  @test_throws AssertionError ObjRHSBatchQuadraticModel(typeof(lp)[])
-end

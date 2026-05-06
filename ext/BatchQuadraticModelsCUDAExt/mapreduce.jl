@@ -6,10 +6,7 @@ Base.@propagate_inbounds _src_getindex(srcs::Tuple{}, i, j) = ()
 const _AnyCuMat{T} = Union{CuMatrix{T}, SubArray{T, 2, <:CuArray{T, 2}, <:Tuple, false}}
 
 _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N}}) where {F, OP, T, N} = begin
-  j = blockIdx().x
-  bs = size(out, 2)
-  nrows = size(first(srcs), 1)
-
+  j = blockIdx().x; bs = size(out, 2); nrows = size(first(srcs), 1)
   @inbounds if j <= bs
     val = neutral
     i = threadIdx().x
@@ -17,9 +14,7 @@ _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N
       val = op(val, f(_src_getindex(srcs, i, j)...))
       i += blockDim().x
     end
-
     val = CUDA.reduce_block(op, val, neutral, Val(true))
-
     if threadIdx().x == 1
       out[1, j] = val
     end

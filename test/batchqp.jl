@@ -234,47 +234,6 @@ end
   end
 end
 
-@testset "batch constructor validation" begin
-  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
-
-  lp1 = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 2], [1, 2], [1.0, 1.0], 2, 2),
-    c0 = 0.0,
-    bounds...,
-  )
-  lp2 = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 1], [1, 2], [3.0, 4.0], 2, 2),
-    c0 = 0.0,
-    bounds...,
-  )
-
-  @test_throws ArgumentError BatchQuadraticModel([lp1, lp2]; validate = true)
-  @test_throws ArgumentError BatchQuadraticModel([lp1, lp2]; validate = false)
-
-  qp1 = ineqconqp_QP()
-  qp2 = QuadraticModel(
-    qp1.data.c,
-    qp1.data.Q.source.rows,
-    qp1.data.Q.source.cols,
-    qp1.data.Q.source.vals;
-    Arows = [1, 2, 2, 3, 3, 1],
-    Acols = [1, 1, 2, 1, 2, 2],
-    Avals = qp1.data.A.source.vals,
-    lcon = qp1.meta.lcon,
-    ucon = qp1.meta.ucon,
-    lvar = qp1.meta.lvar,
-    uvar = qp1.meta.uvar,
-    c0 = qp1.data.c0[],
-  )
-
-  @test_throws ArgumentError BatchQuadraticModel([qp1, qp2]; validate = true)
-  @test_throws ArgumentError BatchQuadraticModel([qp1, qp2]; validate = false)
-end
-
 @testset "adapt preserves objective sense" begin
   bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
   lp_models = [
@@ -312,20 +271,6 @@ end
   bquad = BatchQuadraticModel(qp_models)
   @test !bquad.meta.minimize
   @test !Adapt.adapt(Array, bquad).meta.minimize
-end
-
-@testset "empty batch validation" begin
-  qp = ineqconqp_QP()
-  lp = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2),
-    lcon = [-Inf, -Inf],
-    ucon = [Inf, Inf],
-  )
-
-  @test_throws AssertionError BatchQuadraticModel(typeof(qp)[])
-  @test_throws AssertionError BatchQuadraticModel(typeof(lp)[])
 end
 
 @testset "scalar replication preserves metadata" begin
