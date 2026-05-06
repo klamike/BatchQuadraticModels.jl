@@ -3,36 +3,30 @@ module BatchQuadraticModels
 using Adapt
 using LinearAlgebra, SparseArrays
 using NLPModels
-using QuadraticModels
 using SparseMatricesCOO
 
-import QuadraticModels:
-  QPData,
-  QuadraticModel,
-  fill_structure!
-
 abstract type AbstractSparseOperator{T} <: AbstractMatrix{T} end
-abstract type AbstractBatchQuadraticModel{T, MT} <: NLPModels.AbstractBatchNLPModel{T, MT} end
-abstract type AbstractUniformBatchQuadraticModel{T, MT} <: AbstractBatchQuadraticModel{T, MT} end
-abstract type AbstractObjRHSBatchQuadraticModel{T, MT} <: AbstractBatchQuadraticModel{T, MT} end
 
-function sparse_operator end
-function operator_sparse_matrix end
+# Forward declaration for the MOI ext (defined in `ext/moi/qp_model.jl`).
+function qp_model end
 
-_resolve_batch_matrix_type(qp, ::Type{T}, MT) where {T} = MT === nothing ? typeof(similar(qp.data.c, T, 0, 0)) : MT
-
-export ObjRHSBatchQuadraticModel, BatchQuadraticModel
-export ObjRHSBatchLinearModel, BatchLinearModel, batch_model
-export BatchSparseOp, batch_spmv!, _batch_spmv_impl!, _build_op
-export batch_mapreduce!, batch_maximum!, batch_minimum!, batch_sum!
-export gather_columns!, gather_entries!, batch_spmv_subset!
-export obj_subset!, grad_subset!, cons_subset!, jac_coord_subset!, hess_coord_subset!
-
-include("batch_mapreduce.jl")
+include("utils.jl")
+include("sparse_operator.jl")
+include("models.jl")
 include("batch_spmv.jl")
-include("operators.jl")
-include("models/uniform.jl")
-include("models/obj_rhs.jl")
-include("models/linear.jl")
+include("batch_models.jl")
+include("standard_form_types.jl")
+include("standard_form_kernels.jl")
+include("standard_form.jl")
 
-end # module BatchQuadraticModels
+export LinearModel, QuadraticModel, LPData, QPData
+export BatchQuadraticModel, ObjRHSBatchQuadraticModel, UniformBatchQuadraticModel, batch_model
+export BatchSparseOperator, batch_spmv!, batch_spmv_subset!
+export batch_mapreduce!, batch_maximum!, batch_minimum!, batch_sum!
+export gather_columns!, gather_entries!
+export obj_subset!, grad_subset!, cons_subset!, jac_coord_subset!, hess_coord_subset!
+export standard_form, update_standard_form!
+export recover_primal!, recover_primal, recover_variable_multipliers!
+export StandardFormWorkspace
+
+end # module

@@ -1,11 +1,25 @@
 # BatchQuadraticModels.jl
 
-Batched LP/QP models for `QuadraticModels.jl`.
+`BatchQuadraticModels.jl` provides lightweight LP/QP model types plus batched model wrappers.
 
-The following convenience constructors are provided, taking as input `Vector{<:QuadraticModel}`:
+- `LPData`, `QPData`, `LinearModel`, `QuadraticModel` are the single-problem containers used by `MadIPM`.
+- `BatchQuadraticModel`, `ObjRHSBatchQuadraticModel`, and `UniformBatchQuadraticModel` cover batched solve patterns with shared or per-instance sparse values.
+- The package also provides CUDA adaptation for the supported sparse/model types and an MOI extension that imports LPs/QPs into `QuadraticModel`.
 
-- `BatchQuadraticModel(qps)`: Uniform-batch model. Sparsity structure is the same but values of A, H may change.
-- `BatchLinearModel(qps)`: BatchQuadraticModel where H is zero.
-- `ObjRHSBatchQuadraticModel(qps)`: BatchQuadraticModel where A and H are fixed.
-- `ObjRHSBatchLinearModel(qps)`: BatchQuadraticModel where A is fixed and H is zero.
-- `batch_model(qps)`: Analyze the individual models to construct the most specific batch model possible.
+Typical usage:
+
+```julia
+using SparseArrays
+using BatchQuadraticModels
+
+data = QPData(
+    sparse([1, 1], [1, 2], [1.0, 1.0], 1, 2),
+    [1.0, 1.0],
+    sparse(Int[], Int[], Float64[], 2, 2);
+    lcon = [1.0],
+    ucon = [1.0],
+    lvar = [0.0, 0.0],
+)
+
+qp = QuadraticModel(data)
+```

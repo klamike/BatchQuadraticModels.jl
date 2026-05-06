@@ -6,10 +6,7 @@ Base.@propagate_inbounds _src_getindex(srcs::Tuple{}, i, j) = ()
 const _AnyCuMat{T} = Union{CuMatrix{T}, SubArray{T, 2, <:CuArray{T, 2}, <:Tuple, false}}
 
 _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N}}) where {F, OP, T, N} = begin
-  j = blockIdx().x
-  bs = size(out, 2)
-  nrows = size(first(srcs), 1)
-
+  j = blockIdx().x; bs = size(out, 2); nrows = size(first(srcs), 1)
   @inbounds if j <= bs
     val = neutral
     i = threadIdx().x
@@ -17,9 +14,7 @@ _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N
       val = op(val, f(_src_getindex(srcs, i, j)...))
       i += blockDim().x
     end
-
     val = CUDA.reduce_block(op, val, neutral, Val(true))
-
     if threadIdx().x == 1
       out[1, j] = val
     end
@@ -27,10 +22,10 @@ _batch_mapreduce_kernel(f::F, op::OP, neutral::T, out, srcs::Tuple{Vararg{Any, N
   return nothing
 end
 
-function BatchQuadraticModels.batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
+function batch_mapreduce!(f, op, neutral::T, out::_AnyCuMat{T}, srcs::_AnyCuMat{T}...) where {T}
   nrows = size(first(srcs), 1)
-  nrows == 0 && return out
   fill!(out, neutral)
+  nrows == 0 && return out
   kernel = @cuda launch = false _batch_mapreduce_kernel(f, op, neutral, out, srcs)
   config = launch_configuration(kernel.fun)
   threads = max(1, (config.threads ÷ 32) * 32)
@@ -48,23 +43,12 @@ end
   @inbounds dst[j] = src[roots[j]]
 end
 
-function BatchQuadraticModels.gather_columns!(
-  dst::CuMatrix{T},
-  src::CuMatrix{T},
-  roots::AbstractVector{<:Integer},
-) where {T}
-  nactive = size(dst, 2)
-  backend = CUDABackend()
-  _gather_columns_kernel!(backend)(dst, src, roots; ndrange=(size(dst, 1), nactive))
+function gather_columns!(dst::CuMatrix{T}, src::CuMatrix{T}, roots::AbstractVector{<:Integer}) where {T}
+  _gather_columns_kernel!(CUDABackend())(dst, src, roots; ndrange = (size(dst, 1), size(dst, 2)))
   return dst
 end
 
-function BatchQuadraticModels.gather_entries!(
-  dst::CuVector{T},
-  src::CuVector{T},
-  roots::AbstractVector{<:Integer},
-) where {T}
-  backend = CUDABackend()
-  _gather_entries_kernel!(backend)(dst, src, roots; ndrange=length(dst))
+function gather_entries!(dst::CuVector{T}, src::CuVector{T}, roots::AbstractVector{<:Integer}) where {T}
+  _gather_entries_kernel!(CUDABackend())(dst, src, roots; ndrange = length(dst))
   return dst
 end

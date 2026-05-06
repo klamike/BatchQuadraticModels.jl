@@ -6,15 +6,15 @@
   nnzh = qp.meta.nnzh
   nbatch = 3
 
-  Arows = qp.data.A.rows
-  Acols = qp.data.A.cols
-  Avals_base = qp.data.A.vals
-  Hrows = qp.data.H.rows
-  Hcols = qp.data.H.cols
-  Hvals_base = qp.data.H.vals
+  Arows = qp.data.A.source.rows
+  Acols = qp.data.A.source.cols
+  Avals_base = qp.data.A.source.vals
+  Hrows = qp.data.Q.source.rows
+  Hcols = qp.data.Q.source.cols
+  Hvals_base = qp.data.Q.source.vals
 
   c_batches = [copy(qp.data.c), qp.data.c .* 2.0, qp.data.c .+ 0.5]
-  c0_batches = [qp.data.c0, 2.0, -1.0]
+  c0_batches = [qp.data.c0[], 2.0, -1.0]
   Avals_batches = [copy(Avals_base), Avals_base .* 1.5, Avals_base .+ 0.1]
   Hvals_batches = [copy(Hvals_base), Hvals_base .* 3.0, Hvals_base .+ 0.5]
   lvar_batches = [copy(qp.meta.lvar), qp.meta.lvar .- 0.5, qp.meta.lvar .+ 0.5]
@@ -190,7 +190,7 @@
   end
 end
 
-@testset "BatchLinearModel" begin
+@testset "BatchQuadraticModel" begin
   qp = QuadraticModel(
     [1.0, -2.0],
     spzeros(2, 2);
@@ -208,7 +208,7 @@ end
       A = sparse([1, 2, 2], [1, 1, 2], avals, 2, 2),
       lcon = qp.meta.lcon .+ lshift,
       ucon = qp.meta.ucon .+ ushift,
-      c0 = qp.data.c0 + c0shift,
+      c0 = qp.data.c0[] + c0shift,
       name = "lp$i",
     ) for (i, (cshift, avals, lshift, ushift, c0shift)) in enumerate((
       (0.0, [1.0, -1.0, 2.0], 0.0, 0.0, 0.0),
@@ -217,7 +217,7 @@ end
     ))
   ]
 
-  bqp = BatchLinearModel(models)
+  bqp = BatchQuadraticModel(models)
   xs = [[1.0, 2.0], [0.5, 1.5], [-0.5, 1.0]]
   bx = reduce(hcat, xs)
 
@@ -234,47 +234,6 @@ end
   end
 end
 
-@testset "batch constructor validation" begin
-  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
-
-  lp1 = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 2], [1, 2], [1.0, 1.0], 2, 2),
-    c0 = 0.0,
-    bounds...,
-  )
-  lp2 = QuadraticModel(
-    [1.0, 2.0],
-    spzeros(2, 2);
-    A = sparse([1, 1], [1, 2], [3.0, 4.0], 2, 2),
-    c0 = 0.0,
-    bounds...,
-  )
-
-  @test_throws AssertionError BatchLinearModel([lp1, lp2])
-  @test BatchLinearModel([lp1, lp2]; validate = false) isa BatchLinearModel
-
-  qp1 = ineqconqp_QP()
-  qp2 = QuadraticModel(
-    qp1.data.c,
-    qp1.data.H.rows,
-    qp1.data.H.cols,
-    qp1.data.H.vals;
-    Arows = [1, 2, 2, 3, 3, 1],
-    Acols = [1, 1, 2, 1, 2, 2],
-    Avals = qp1.data.A.vals,
-    lcon = qp1.meta.lcon,
-    ucon = qp1.meta.ucon,
-    lvar = qp1.meta.lvar,
-    uvar = qp1.meta.uvar,
-    c0 = qp1.data.c0,
-  )
-
-  @test_throws AssertionError BatchQuadraticModel([qp1, qp2])
-  @test BatchQuadraticModel([qp1, qp2]; validate = false) isa BatchQuadraticModel
-end
-
 @testset "adapt preserves objective sense" begin
   bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
   lp_models = [
@@ -287,7 +246,7 @@ end
       bounds...,
     ) for i in 0:1
   ]
-  blinear = BatchLinearModel(lp_models)
+  blinear = BatchQuadraticModel(lp_models)
   @test !blinear.meta.minimize
   @test !Adapt.adapt(Array, blinear).meta.minimize
 
@@ -295,17 +254,17 @@ end
   qp_models = [
     QuadraticModel(
       qp.data.c,
-      qp.data.H.rows,
-      qp.data.H.cols,
-      qp.data.H.vals .* scale;
-      Arows = qp.data.A.rows,
-      Acols = qp.data.A.cols,
-      Avals = qp.data.A.vals .+ shift,
+      qp.data.Q.source.rows,
+      qp.data.Q.source.cols,
+      qp.data.Q.source.vals .* scale;
+      Arows = qp.data.A.source.rows,
+      Acols = qp.data.A.source.cols,
+      Avals = qp.data.A.source.vals .+ shift,
       lcon = qp.meta.lcon,
       ucon = qp.meta.ucon,
       lvar = qp.meta.lvar,
       uvar = qp.meta.uvar,
-      c0 = qp.data.c0,
+      c0 = qp.data.c0[],
       minimize = false,
     ) for (scale, shift) in ((1.0, 0.0), (2.0, 0.5))
   ]
@@ -314,16 +273,42 @@ end
   @test !Adapt.adapt(Array, bquad).meta.minimize
 end
 
-@testset "empty batch validation" begin
-  qp = ineqconqp_QP()
-  lp = QuadraticModel(
-    [1.0, 2.0],
+@testset "scalar replication preserves metadata" begin
+  qp = QuadraticModel(
+    [1.0, -2.0],
     spzeros(2, 2);
-    A = sparse([1, 2], [1, 2], [1.0, 2.0], 2, 2),
-    lcon = [-Inf, -Inf],
-    ucon = [Inf, Inf],
+    A = sparse([1, 2], [1, 2], [3.0, -4.0], 2, 2),
+    lcon = [0.0, -Inf],
+    ucon = [5.0, 7.0],
+    lvar = [-1.0, 2.0],
+    uvar = [4.0, Inf],
+    x0 = [0.5, 3.0],
+    y0 = [0.1, -0.2],
   )
+  bqp = BatchQuadraticModel(qp, 3)
 
-  @test_throws AssertionError BatchQuadraticModel(typeof(qp)[])
-  @test_throws AssertionError BatchLinearModel(typeof(lp)[])
+  @test bqp.meta.x0 == repeat(qp.meta.x0, 1, 3)
+  @test bqp.meta.y0 == repeat(qp.meta.y0, 1, 3)
+  @test bqp.meta.lvar == repeat(qp.meta.lvar, 1, 3)
+  @test bqp.meta.uvar == repeat(qp.meta.uvar, 1, 3)
+  @test bqp.meta.lcon == repeat(qp.meta.lcon, 1, 3)
+  @test bqp.meta.ucon == repeat(qp.meta.ucon, 1, 3)
+end
+
+@testset "vector construction and adapt preserve y0" begin
+  bounds = (lcon = [-Inf, -Inf], ucon = [Inf, Inf])
+  qps = [
+    QuadraticModel(
+      [1.0, 2.0],
+      spzeros(2, 2);
+      A = spzeros(2, 2),
+      y0 = [1.0 + i, -2.0 - i],
+      bounds...,
+    ) for i in 1:2
+  ]
+  bqp = BatchQuadraticModel(qps)
+  expected = reduce(hcat, [qp.meta.y0 for qp in qps])
+
+  @test bqp.meta.y0 == expected
+  @test Adapt.adapt(Array, bqp).meta.y0 == expected
 end
